@@ -41,6 +41,9 @@ Kiểm tra nhanh: mở web ở 2 trình duyệt/2 máy khác nhau → dữ liệ
 
 ## 4. Đưa lên Vercel
 
+**Link chính thức: https://pxucinema.vercel.app** (dùng link này, đừng dùng link có mã hash kiểu
+`pxucinema-xxxx-bin-03d2.vercel.app` — đó là link từng lần deploy, Vercel chặn truy cập).
+
 **Cách đang dùng: Vercel phát hành trực tiếp thư mục `dist` đã build sẵn**, không build lại trên Vercel
 (nên không phụ thuộc `tsc`/`esbuild`/`rollup` của máy chủ Vercel). Cấu hình nằm trong `vercel.json`:
 `installCommand`/`buildCommand` là lệnh rỗng, `outputDirectory: "dist"`.
