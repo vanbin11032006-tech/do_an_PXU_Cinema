@@ -1,0 +1,221 @@
+#H1|PHẦN 2: PHÂN TÍCH HỆ THỐNG
+#H2|2.1 Khảo sát thực trạng và nhu cầu
+#H3|2.1.1. Thực trạng vận hành
+#P|Khảo sát được thực hiện trên chính bài toán mà hồ sơ mô tả: một cụm rạp có nhiều phòng, mỗi phòng có sơ đồ ghế riêng, bán vé đồng thời ở quầy và trực tuyến, có nhân viên soát vé tại cửa phòng chiếu và kế toán đối soát chuyển khoản vào cuối ngày. Ba điểm nghẽn lặp lại ở cách làm thủ công:
+#B|Tồn ghế không có nguồn duy nhất: mỗi kênh giữ một bảng riêng, chỉ phát hiện bán trùng khi hai khách đã trả tiền cho cùng một ghế.
+#B|Thời hạn không được cưỡng chế: ghế bị giữ nhưng khách không thanh toán, không ai nhả ghế, suất chiếu vẫn hiển thị còn chỗ trong khi thực tế đã bị chiếm.
+#B|Dòng tiền không đối soát được: khách chuyển khoản với nội dung tự do, kế toán dò sao kê bằng mắt; chuyển thiếu, chuyển thừa, chuyển sau khi hết hạn đều không có chỗ ghi nhận nên dễ mất tiền hoặc xác nhận khống.
+#H3|2.1.2. Nhu cầu theo từng tác nhân
+#B|Khách hàng: cần thấy ghế còn trống thật, biết giá từng loại ghế trước khi chọn, biết mình đang giữ ghế bao lâu, biết chính xác số tiền và nội dung chuyển khoản, và nhận được vé ngay khi thanh toán được xác nhận.
+#B|Nhân viên quầy: cần bán nhanh theo ba bước, dùng chung sơ đồ ghế với kênh online để không bán trùng, in vé hoặc gửi mã cho khách, và đối chiếu tiền mặt cuối ca.
+#B|Nhân viên soát vé: cần kết quả tức thì khi quét, phân biệt rõ vé hợp lệ, vé đã dùng, vé sai suất, vé chưa thanh toán, và cần chặn trường hợp hai máy cùng quét một vé.
+#B|Quản lý rạp: cần hàng đợi biên lai sắp theo thời gian chờ, cảnh báo lệch tiền và ảnh trùng, công cụ dời hoặc hủy suất kèm danh sách đơn bị ảnh hưởng.
+#B|Quản trị hệ thống: cần cấu hình tham số nghiệp vụ không phải sửa mã nguồn, phân quyền theo mã, và nhật ký thao tác không sửa được.
+#H3|2.1.3. Sự cần thiết của đề tài
+#P|Cả năm nhóm nhu cầu trên đều dựa vào một điều kiện chung: phải có một nguồn sự thật duy nhất về ghế, tiền và trạng thái. Không có nó, mọi cải tiến giao diện chỉ làm sai sót xảy ra nhanh hơn. Đó là lý do đề tài tập trung trước hết vào mô hình trạng thái, quy tắc nghiệp vụ và hợp đồng API, sau đó mới đến giao diện.
+#H2|2.2 Phân tích yêu cầu chức năng
+#H3|2.2.1. Yêu cầu theo mức ưu tiên
+#P|Tài liệu nghiệp vụ chia yêu cầu theo ba giai đoạn P1, P2 và P3 (mục 1.3). Bảng dưới tóm tắt các yêu cầu P1 — phần bắt buộc phải có để hệ thống vận hành được, kèm mã nhóm chức năng dùng xuyên suốt báo cáo:
+#TBL|16,62,22
+#ROW|Nhóm|Yêu cầu tiêu biểu (P1)|Mã
+#ROW|Danh mục rạp|CRUD rạp, phòng chiếu; trạng thái phòng; sức chứa suy ra từ sơ đồ ghế|FR-SYS
+#ROW|Phim|CRUD phim, thể loại, nhãn tuổi; trạng thái đang chiếu, sắp chiếu, đã kết thúc; chặn xóa khi còn suất chiếu|FR-MOV
+#ROW|Suất chiếu|Tạo, sửa, hủy suất; chống trùng giờ và thiếu thời gian dọn phòng; tự tính giờ kết thúc|FR-SHW
+#ROW|Sơ đồ ghế|Lưới ô tùy biến, loại ghế thường, VIP, đôi, lối đi, ô khuyết; chặn ghế theo suất|FR-SEA
+#ROW|Tài khoản|Đăng ký, đăng nhập, quên mật khẩu, hồ sơ, đổi mật khẩu, khóa tài khoản|FR-AUT
+#ROW|Đặt vé|Tạo đơn giữ ghế, hạn giữ theo cấu hình, đổi ghế khi còn giữ, hủy đơn, chống trùng đơn|FR-BOK
+#ROW|Thanh toán|Sinh VietQR, nội dung chuyển khoản duy nhất, tải biên lai, duyệt hoặc từ chối kèm lý do|FR-PAY
+#ROW|Vé và soát vé|Phát hành một vé cho mỗi ghế, mã QR khó đoán, soát vé nguyên tử, hoàn tác check-in|FR-TKT
+#ROW|POS và ca|Bán tại quầy, thanh toán tiền mặt, chuyển khoản, thẻ; mở và đóng ca; in lại vé|FR-POS
+#ROW|Báo cáo|Doanh thu, top phim, lấp đầy, ca làm việc, voucher, hoàn tiền; xuất CSV|FR-RPT
+#EMPTY
+#H3|2.2.2. Luồng đặt vé trực tuyến — luồng trung tâm
+#P|Luồng đặt vé là nơi hội tụ gần như toàn bộ quy tắc nghiệp vụ quan trọng. Tiền điều kiện: khách đã đăng nhập, suất chiếu đang ở trạng thái mở bán và chưa qua giờ đóng bán trực tuyến. Luồng gồm tám bước:
+#N|Khách chọn phim, rạp, ngày và suất chiếu. Hệ thống chỉ liệt kê suất đang mở bán; mỗi nút giờ hiển thị giá thấp nhất và số ghế còn lại.
+#N|Khách mở sơ đồ ghế. Máy chủ trả về lưới ô kèm trạng thái từng ghế (còn trống, đang được giữ, đã bán, không khả dụng) và giá từng ghế đã gồm phụ thu loại ghế.
+#N|Khách chọn tối đa tám ghế. Ghế đôi được chọn theo cặp; phim có nhãn T16 hoặc T18 bắt buộc khách xác nhận đủ tuổi trước khi đi tiếp.
+#N|Khi bấm tiếp tục, máy chủ tạo đơn ở trạng thái holding, khóa ghế và đặt hạn giữ ghế theo cấu hình. Nếu một ghế vừa bị người khác giữ, máy chủ trả lỗi SEAT_UNAVAILABLE kèm danh sách ghế bị mất và không tạo đơn.
+#N|Khách thêm hoặc bớt combo bắp nước. Mọi thay đổi đều gọi lại máy chủ để tính lại tổng tiền; giao diện không tự cộng.
+#N|Khách xem lại đơn, áp voucher, dùng điểm thưởng, nhập thông tin liên hệ và đồng ý điều khoản. Voucher được kiểm tra lại ở bước này để tránh trường hợp mã hết lượt trong lúc khách đang thao tác.
+#N|Khách bấm thanh toán. Máy chủ chốt đơn, tạo giao dịch ở trạng thái chờ và trả về số tiền, nội dung chuyển khoản cùng mã QR. Đơn vẫn giữ ghế cho đến khi hết hạn hoặc được duyệt.
+#N|Khách chuyển khoản và tải ảnh biên lai. Đơn chuyển sang trạng thái chờ duyệt; khi quản lý duyệt, máy chủ phát hành một vé cho mỗi ghế và gửi thông báo.
+#P|Các ngoại lệ đều có hành vi xác định: hết hạn giữ ghế thì đơn chuyển sang expired và ghế được nhả; ghế bị người khác giữ thì giao diện tô đỏ đúng ghế đó và yêu cầu chọn lại; voucher sai điều kiện thì báo lý do cụ thể nhưng không chặn việc đặt vé; gửi lặp yêu cầu tạo đơn với cùng khóa idempotency thì trả lại chính đơn đã tạo thay vì tạo đơn thứ hai.
+#H3|2.2.3. Luồng thanh toán QR và duyệt biên lai
+#P|Hồ sơ chọn chuyển khoản ngân hàng làm phương thức chính cho giai đoạn P1, với hai chế độ xác nhận: duyệt tay và tự động qua webhook. Bản triển khai cài đặt chế độ duyệt tay; chế độ tự động đã có chỗ cấu hình nhưng chưa có kênh nhận webhook.
+#B|Mã đơn có dạng PXU-YYMMDD-XXXXXX với sáu ký tự ngẫu nhiên đã loại các ký tự dễ nhầm; nội dung chuyển khoản là tiền tố cấu hình cộng mã rút gọn của đơn, bảo đảm duy nhất để đối soát.
+#B|Trang thanh toán hiển thị mã VietQR đã nhúng số tiền và nội dung, kèm bảng thông tin có nút sao chép từng trường, đồng hồ giữ ghế và cảnh báo “chuyển đúng số tiền và nội dung”.
+#B|Khách tải ảnh biên lai (JPG, PNG hoặc WebP, tối đa 5 MB). Máy chủ băm ảnh và từ chối nếu ảnh đã dùng cho đơn khác, nhờ đó chặn được việc gửi lại một biên lai cho nhiều đơn.
+#B|Đơn đã gửi biên lai vẫn giữ ghế trong thời hạn SLA: sáu mươi phút kể từ lúc gửi, nhưng không vượt quá ba mươi phút trước giờ chiếu. Quá hạn mà chưa xử lý, đơn tự hết hạn và ghế được nhả.
+#B|Quản lý duyệt hoặc từ chối trong hàng đợi. Từ chối bắt buộc chọn lý do (ảnh mờ, sai số tiền, sai nội dung, chưa nhận được tiền, lý do khác) và khách được gửi lại biên lai trong thời gian còn lại.
+#B|Khi duyệt, máy chủ cập nhật giao dịch sang paid, phát hành vé, cộng điểm thành viên, ghi nhận lượt dùng voucher và ghi nhật ký kèm người duyệt.
+#H3|2.2.4. Luồng hủy vé, hoàn tiền và giao dịch bất thường
+#B|Khách tự hủy đơn đang giữ ghế: miễn phí, ghế được nhả ngay, lượt voucher được trả lại.
+#B|Khách hủy vé đã thanh toán: mặc định hệ thống không cho tự hủy mà chuyển thành yêu cầu hỗ trợ, vì chính sách hoàn của rạp Việt Nam thường không hoàn sau khi đã thanh toán. Tham số được đưa vào cấu hình thay vì viết cứng.
+#B|Rạp hủy suất hoặc dời suất: công cụ quản trị liệt kê toàn bộ đơn bị ảnh hưởng, cho phép chọn hành động hàng loạt là đổi sang suất khác hoặc hoàn tiền, và gửi thông báo cho từng khách.
+#B|Hoàn tiền đi theo bốn bước requested, approved, processing, completed, có nhánh rejected và failed. Mọi khoản hoàn bắt buộc có lý do, người yêu cầu, người duyệt và mã tham chiếu do người thực hiện nhập sau khi chuyển tiền.
+#B|Giao dịch bất thường gồm bốn loại: chuyển khoản không khớp đơn nào, chuyển sau khi đơn đã hết hạn, chuyển trùng, và chuyển thiếu hoặc thừa. Quản trị xử lý bằng một trong bốn hành động: liên kết với đơn, khôi phục đơn nếu ghế còn trống, hoàn tiền, hoặc bỏ qua kèm lý do.
+#H3|2.2.5. Các luồng nghiệp vụ còn lại
+#P|Ngoài bốn luồng trung tâm ở trên, tài liệu nghiệp vụ còn định nghĩa các luồng vận hành sau. Mỗi luồng đều có tác nhân, tiền điều kiện, các bước và hậu điều kiện riêng:
+#B|Mở và đóng ca làm việc: nhân viên mở ca với tiền đầu ca, bán hàng trong ca, đóng ca bằng cách đếm tiền theo mệnh giá; hệ thống tính chênh lệch và ghi lý do nếu có.
+#B|Bán vé tại quầy: chọn phim, suất, ghế trên cùng sơ đồ với kênh online nhưng giữ ghế ba phút; thanh toán tiền mặt, chuyển khoản hoặc thẻ; in vé khổ 80 mm hoặc gửi mã cho khách.
+#B|Soát vé: quét mã QR hoặc nhập mã; kết quả trả về một trong năm nhóm (hợp lệ, đã dùng, chưa đến giờ hoặc quá giờ, không hợp lệ, cần kiểm tra giấy tờ); mọi lần quét đều ghi log kể cả khi thất bại.
+#B|Đổi ghế và đổi suất: chỉ áp dụng cho vé chưa sử dụng và còn đủ thời gian trước giờ chiếu; chênh lệch giá được thu thêm hoặc hoàn lại; mỗi đơn đổi suất tối đa một lần.
+#B|Quản lý voucher: kiểm tra thời hạn, giá trị đơn tối thiểu, phạm vi áp dụng, tổng lượt và lượt trên mỗi người; lượt chỉ tính khi đơn được thanh toán và được trả lại khi đơn hủy hoặc hết hạn.
+#B|Điểm thưởng và hạng thành viên: cộng điểm khi đơn được thanh toán, trừ điểm khi khách dùng để giảm giá, điều chỉnh thủ công có lý do; hạng xét theo tổng chi tiêu mười hai tháng.
+#B|Quản lý nội dung: banner, tin tức, trang tĩnh và kiểm duyệt đánh giá phim; nội dung do quản trị nhập được làm sạch trước khi hiển thị.
+#B|Nhật ký và báo cáo: mọi thao tác ghi trên dữ liệu nhạy cảm đều tạo một dòng nhật ký; báo cáo lấy số từ máy chủ theo cùng một định nghĩa chỉ số.
+#P|Cách đọc các luồng này trong đồ án: mỗi luồng tương ứng một nhóm yêu cầu chức năng ở mục 2.2.1, một hoặc vài trạng thái ở mục 2.3 và một nhóm kịch bản kiểm thử ở mục 5.2. Nhờ vậy khi một luồng thay đổi, phạm vi ảnh hưởng được xác định ngay thay vì phải rà lại toàn bộ hệ thống.
+#H2|2.3 Vòng đời và máy trạng thái
+#P|Chuyển trạng thái chỉ do máy chủ thực hiện, trong một lần ghi nguyên tử, và luôn ghi lại thời điểm cùng người thực hiện. Một chuyển đổi không có trong bảng dưới đây bị từ chối với mã lỗi BOOKING_INVALID_STATE.
+#TBL|16,32,52
+#ROW|Trạng thái đơn|Ý nghĩa|Chuyển tiếp hợp lệ
+#ROW|holding|Đã giữ ghế, chờ khách thanh toán|confirmed, expired, cancelled
+#ROW|confirmed|Đã nhận đủ tiền, vé đã phát hành|completed, cancelled
+#ROW|completed|Suất chiếu đã kết thúc|— (trạng thái cuối)
+#ROW|expired|Quá hạn giữ ghế hoặc quá hạn chờ duyệt|— (trạng thái cuối, chỉ khôi phục thủ công nếu ghế còn)
+#ROW|cancelled|Bị hủy bởi khách, nhân viên hoặc rạp|— (trạng thái cuối)
+#EMPTY
+#P|Song song với trạng thái đơn là trạng thái thanh toán, được suy ra từ giao dịch chứ không cho sửa tay: pending, proof_submitted, paid, rejected, expired, refunded và partially_refunded. Vé có vòng đời riêng: valid, used, cancelled, expired, và chỉ quản lý mới hoàn tác được một lần check-in với lý do kèm nhật ký. Suất chiếu đi theo scheduled, selling, closed, finished và có thể bị cancelled trước khi kết thúc. Yêu cầu hoàn tiền đi theo requested, approved, processing, completed, kèm nhánh rejected và failed.
+#P|Các chuyển trạng thái tự động được thực hiện bởi một hàm quét chạy khi có truy cập, thay vì một bộ hẹn giờ riêng. Cách làm này giữ hệ thống đúng khi chỉ có một tiến trình máy chủ, nhưng là điểm cần thay bằng hàng đợi công việc có khóa phân tán khi triển khai nhiều tiến trình:
+#TBL|34,26,40
+#ROW|Công việc|Tần suất thực tế|Việc làm
+#ROW|Hết hạn giữ ghế|Mỗi lần đọc dữ liệu|Đơn holding quá hạn chuyển expired, nhả ghế, trả lượt voucher, gửi thông báo
+#ROW|Hết hạn chờ duyệt|Mỗi lần đọc dữ liệu|Áp SLA 60 phút hoặc mốc 30 phút trước giờ chiếu, lấy mốc sớm hơn
+#ROW|Đóng bán|Mỗi lần đọc dữ liệu|Suất đến giờ đóng bán chuyển closed; POS vẫn bán đến sát giờ chiếu
+#ROW|Kết thúc suất|Mỗi lần đọc dữ liệu|Suất qua giờ kết thúc chuyển finished, đơn confirmed chuyển completed, vé chưa dùng chuyển expired
+#ROW|Đồng bộ phim|Mỗi lần đọc dữ liệu|Phim sắp chiếu đến ngày khởi chiếu chuyển now_showing
+#EMPTY
+#H2|2.4 Phân tích yêu cầu phi chức năng
+#TBL|18,82
+#ROW|Nhóm|Yêu cầu
+#ROW|Hiệu năng|Trang danh sách phản hồi dưới 2 giây; sơ đồ ghế dưới 1 giây với phòng 100–150 ghế; chịu được hàng trăm phiên xem suất hot cùng lúc ở mức đọc
+#ROW|Nhất quán|Không bán trùng ghế dưới tải đồng thời; tổng tiền do máy chủ tính; giá chốt tại thời điểm tạo đơn và lưu ảnh chụp (snapshot)
+#ROW|Sẵn sàng|Sự kiện chuyển trạng thái chạy lại an toàn; thao tác duyệt và hoàn tiền có tính idempotent
+#ROW|Bảo mật|Băm mật khẩu có muối; kiểm tra quyền ở máy chủ cho từng yêu cầu; kiểm tra dữ liệu vào; chặn tải lên sai định dạng hoặc quá lớn; không đưa bí mật vào mã nguồn
+#ROW|Riêng tư|Che email và số điện thoại trong danh sách; ảnh biên lai chỉ chủ đơn và người có quyền xem; không ghi dữ liệu cá nhân vào log hay URL
+#ROW|Khả dụng|Mobile-first từ 360 px; điều khiển được bằng bàn phím ở sơ đồ ghế và hàng đợi duyệt; tương phản đạt WCAG 2.1 AA ở mức cơ bản
+#ROW|Quan sát|Lỗi trả về mã ổn định kèm thông điệp tiếng Việt; có endpoint kiểm tra sức khỏe kèm trạng thái kết nối cơ sở dữ liệu
+#ROW|Sao lưu|Cơ sở dữ liệu nằm trong MySQL, sao lưu bằng công cụ của XAMPP; ảnh biên lai lưu cùng bản ghi để không phụ thuộc tệp ngoài
+#ROW|Kiểm thử|Kiểm thử nghiệp vụ cho ghế, tiền, vé; kiểm thử đồng thời cho giữ ghế; kiểm thử quyền và truy cập trái phép
+#EMPTY
+#H2|2.5 Sơ đồ Use Case tổng quát
+#B|Tác nhân: Khách vãng lai, Khách hàng, Nhân viên quầy và soát vé, Quản lý rạp, Quản trị hệ thống.
+#B|Nhóm use case phía khách: Đăng ký và đăng nhập; Tìm và lọc phim; Xem chi tiết phim và lịch chiếu; Chọn suất; Chọn ghế và giữ ghế; Chọn combo; Áp voucher và dùng điểm; Thanh toán QR; Tải biên lai; Xem vé điện tử; Xem lịch sử vé; Hủy đơn đang giữ.
+#B|Nhóm use case phía quầy: Mở ca; Bán vé tại quầy; Thu tiền mặt hoặc chuyển khoản; In vé và in lại vé; Soát vé theo mã; Soát vé cả đơn; Đóng ca và đối chiếu tiền mặt.
+#B|Nhóm use case phía quản trị: Quản lý phim; Quản lý suất chiếu và timeline; Dựng sơ đồ ghế; Quản lý bảng giá và combo; Duyệt biên lai; Hủy đơn và hoàn tiền; Xử lý giao dịch bất thường; Quản lý voucher, thành viên, người dùng; Xem báo cáo; Xem nhật ký; Cấu hình hệ thống và thanh toán.
+#B|Quan hệ include: Đặt vé bao gồm Giữ ghế; Thanh toán bao gồm Kiểm tra quyền sở hữu đơn; Soát vé bao gồm Kiểm tra trạng thái vé và khung giờ hợp lệ; Hoàn tiền bao gồm Ghi nhật ký.
+#B|Quan hệ extend: Áp voucher và Dùng điểm mở rộng từ Xác nhận đơn; Hoàn tác check-in mở rộng từ Soát vé; Đổi ghế mở rộng từ Chi tiết đơn; In lại vé mở rộng từ Vé trong ngày.
+#H2|2.6 Quy tắc nghiệp vụ trọng yếu
+#P|Hồ sơ định nghĩa mười quy tắc xuyên suốt (Tài liệu nghiệp vụ, mục 5) và nhiều quy tắc riêng cho từng luồng. Bảng dưới là các quy tắc trực tiếp quyết định kiến trúc và kiểm thử của đồ án, kèm nơi cưỡng chế thực tế trong bản triển khai. Giá trị trong ngoặc là tham số cấu hình, thay đổi được mà không phải sửa mã nguồn.
+#TBL|10,60,30
+#ROW|Mã|Nội dung|Nơi cưỡng chế
+#ROW|BR-01|Một ghế chỉ thuộc một đơn đang hiệu lực trong cùng suất|Hàm giữ ghế trong một lần ghi tuần tự; kiểm thử đồng thời
+#ROW|BR-02|Tổng tiền, giảm giá và thuế do máy chủ quyết định|Hàm tính lại tổng tiền sau mỗi thay đổi ghế hoặc combo
+#ROW|BR-03|Giá và tên được chụp vào đơn để lịch sử không đổi khi danh mục thay đổi|Ảnh chụp ghế và combo lưu trong đơn
+#ROW|BR-04|Không xóa cứng dữ liệu tài chính; dùng trạng thái hoặc ẩn|Chặn xóa phim còn suất chiếu; hủy thay vì xóa đơn
+#ROW|BR-05|Tạo đơn, thanh toán và hoàn tiền dùng khóa idempotency|Bản đồ khóa trong phiên máy chủ (giới hạn đã nêu ở 1.3.4)
+#ROW|BR-06|Mọi thao tác nhạy cảm ghi nhật ký ai làm gì, khi nào, giá trị trước và sau|Hàm ghi nhật ký gọi trong 20 thao tác quản trị
+#ROW|BR-07|Chỉ chủ đơn hoặc người có quyền xem biên lai và thông tin liên hệ|Kiểm tra quyền sở hữu trong hàm truy cập đơn
+#ROW|BR-08|Hiển thị theo giờ rạp, so sánh thời gian ở máy chủ|Chuẩn hóa ngày giờ trong thư viện dùng chung
+#ROW|BR-09|Giữ ghế 10 phút (hold_minutes), gia hạn một lần 5 phút|Đặt hạn khi tạo đơn; hàm gia hạn kiểm tra cờ đã gia hạn
+#ROW|BR-10|Tối đa 8 ghế mỗi đơn và 3 đơn giữ ghế đồng thời mỗi người|Kiểm tra khi chọn ghế và khi tạo đơn
+#ROW|BR-11|Đơn chờ duyệt giữ ghế tối đa 60 phút hoặc đến 30 phút trước giờ chiếu|Hàm quét hạn dùng mốc sớm hơn
+#ROW|BR-12|Mỗi ghế một vé, mã vé khó đoán và không chứa dữ liệu cá nhân|Sinh mã 32 ký tự từ bảng chữ không nhập nhằng
+#ROW|BR-13|Soát vé nguyên tử: hai máy quét cùng lúc chỉ một máy thành công|Cập nhật trạng thái vé trong một lần ghi tuần tự
+#ROW|BR-14|Hoàn tiền phải có lý do, người duyệt và mã tham chiếu|Mô hình hoàn tiền bốn bước và nhật ký
+#ROW|BR-15|Voucher chỉ tính lượt khi đơn được thanh toán; hủy đơn trả lượt|Bảng lượt dùng voucher cập nhật theo vòng đời đơn
+#EMPTY
+#H2|2.7 Thông báo
+#P|Tài liệu nghiệp vụ (mục 3.15) quy định thông báo giao dịch là bắt buộc, thông báo tiếp thị chỉ gửi khi khách đồng ý. Mỗi sự kiện có người nhận, kênh và thời điểm xác định:
+#TBL|40,18,42
+#ROW|Sự kiện|Người nhận|Kênh và thời điểm
+#ROW|Đăng ký, xác thực email, đặt lại mật khẩu|Khách|Email, ngay khi phát sinh
+#ROW|Giữ ghế sắp hết hạn|Khách|Trong ứng dụng, khi còn hai phút
+#ROW|Đã nhận biên lai, chờ duyệt|Khách|Trong ứng dụng, ngay sau khi gửi
+#ROW|Thanh toán được duyệt và vé phát hành|Khách|Trong ứng dụng kèm liên kết vé
+#ROW|Biên lai bị từ chối|Khách|Trong ứng dụng, kèm lý do và thời gian còn lại
+#ROW|Đơn hết hạn giữ ghế|Khách|Trong ứng dụng, kèm hướng dẫn chọn lại ghế
+#ROW|Hủy suất, hoàn tiền hoàn tất|Khách|Trong ứng dụng
+#ROW|Biên lai mới chờ duyệt|Quản lý, quản trị|Trong ứng dụng, số đếm trên thanh bên
+#ROW|Giao dịch bất thường hoặc biên lai chờ quá lâu|Quản lý, quản trị|Trong ứng dụng, cảnh báo trên bảng điều khiển
+#EMPTY
+#P|Về kỹ thuật, thông báo được ghi vào bảng thông báo của từng người dùng thay vì gửi đồng bộ trong yêu cầu HTTP. Cách làm này bảo đảm một yêu cầu đặt vé không thất bại chỉ vì dịch vụ gửi thư chậm, đồng thời cho phép hiển thị lại toàn bộ lịch sử thông báo trong ứng dụng. Phần gửi email thật và hàng đợi có thử lại vẫn là việc còn lại, đã ghi ở mục 1.3.4 và phần Kết luận.
+#H2|2.8 Yêu cầu bảo mật
+#P|Tài liệu nghiệp vụ đặt mục tiêu bảo vệ tài khoản, dữ liệu khách hàng, thông tin thanh toán và dữ liệu quản trị. Các nguyên tắc bắt buộc:
+#B|Máy chủ là nguồn sự thật duy nhất đối với quyền, giá, tồn ghế, trạng thái đơn và thanh toán; giao diện không phải là nơi quyết định quyền truy cập.
+#B|Không lưu mật khẩu dạng rõ; không đưa dữ liệu nhạy cảm vào URL, log hay dữ liệu phân tích; ảnh biên lai chỉ trả về kèm kiểm tra quyền.
+#B|Mọi API quản trị phải kiểm tra quyền ở máy chủ; dữ liệu được giới hạn theo phạm vi rạp mà người dùng được gán.
+#P|Yêu cầu chi tiết theo từng nhóm, kèm ghi chú đối chiếu thực tế:
+#TBL|18,52,30
+#ROW|Nhóm|Yêu cầu|Đối chiếu bản triển khai
+#ROW|Xác thực|Mật khẩu tối thiểu 8 ký tự gồm chữ và số; khóa tạm sau 5 lần sai trong 15 phút|Đã có kiểm tra độ mạnh và khóa tạm; băm SHA-256 kèm chuỗi cố định thay vì argon2id
+#ROW|Quản lý phiên|Token do máy chủ cấp, thu hồi được, đăng xuất mọi thiết bị|Bảng phiên trong cơ sở dữ liệu; token lưu localStorage (hạn chế đã nêu)
+#ROW|Phân quyền|Kiểm tra theo từng yêu cầu và từng đối tượng; chống truy cập chéo bản ghi|77 điểm kiểm tra quyền và kiểm tra chủ sở hữu đơn
+#ROW|Bảo vệ API|Kiểm tra dữ liệu vào; giới hạn tần suất; cấu hình CORS chặt|Kiểm tra dữ liệu đã có; chưa có giới hạn tần suất và CORS đang mở
+#ROW|Tải lên|Chặn sai định dạng, giới hạn dung lượng, không cho tệp thực thi|Chỉ nhận JPG, PNG, WebP tối đa 5 MB; lưu dạng dữ liệu nhúng
+#ROW|Dữ liệu cá nhân|Che email và số điện thoại trong danh sách; không ghi vào log|Che một phần trong danh sách thành viên và đơn hàng
+#ROW|Thanh toán|Số tiền do máy chủ quyết định; giao dịch đã thanh toán là bất biến|Số tiền tính lại ở máy chủ; sửa sai bằng hoàn tiền
+#ROW|Nhật ký|Chỉ thêm, ghi ai làm gì, trên bản ghi nào, khi nào, trước và sau|Bảng nhật ký chỉ có hàm đọc và hàm ghi nội bộ
+#EMPTY
+#H2|2.9 Mã lỗi nghiệp vụ và tham số cấu hình
+#P|Mỗi lỗi nghiệp vụ có một mã ổn định để giao diện, kiểm thử và nhật ký cùng tham chiếu tới một nguồn. Mã không đổi khi câu chữ thông điệp thay đổi; giao diện ánh xạ mã sang câu tiếng Việt và hành động tương ứng.
+#TBL|38,8,54
+#ROW|Mã lỗi|HTTP|Ngữ cảnh sử dụng
+#ROW|VALIDATION_ERROR|422|Dữ liệu vào sai; kèm danh sách lỗi theo từng trường
+#ROW|UNAUTHENTICATED|401|Chưa đăng nhập hoặc phiên hết hạn
+#ROW|FORBIDDEN|403|Đã đăng nhập nhưng thiếu quyền hoặc không phải chủ bản ghi
+#ROW|NOT_FOUND|404|Không tìm thấy phim, suất chiếu, đơn hoặc mã vé
+#ROW|SEAT_UNAVAILABLE|409|Ghế vừa bị người khác giữ hoặc đã bán; kèm danh sách ghế
+#ROW|SEAT_LIMIT_EXCEEDED|422|Chọn quá số ghế tối đa mỗi đơn
+#ROW|HOLD_EXPIRED|410|Đơn đã hết hạn giữ ghế ở bước thanh toán
+#ROW|HOLD_LIMIT_EXCEEDED|429|Vượt số đơn giữ ghế đồng thời
+#ROW|SHOWTIME_CLOSED|409|Suất đã đóng bán hoặc đã qua giờ chiếu
+#ROW|SHOWTIME_OVERLAP|409|Trùng giờ hoặc thiếu thời gian dọn phòng; kèm suất xung đột
+#ROW|BOOKING_INVALID_STATE|409|Thao tác không hợp lệ với trạng thái hiện tại của đơn
+#ROW|PAYMENT_PROOF_REQUIRED|422|Chưa tải ảnh biên lai
+#ROW|PAYMENT_PROOF_DUPLICATE|409|Ảnh biên lai đã dùng cho đơn khác
+#ROW|VOUCHER_*|422|Mã giảm giá hết hạn, hết lượt, chưa đủ giá trị hoặc không áp dụng
+#ROW|REFUND_NOT_ALLOWED|409|Ngoài chính sách hoàn của rạp
+#ROW|IDEMPOTENCY_CONFLICT|409|Cùng khóa nhưng nội dung yêu cầu khác
+#ROW|LAST_ADMIN|409|Không cho hạ quyền hoặc khóa quản trị viên cuối cùng
+#EMPTY
+#P|Các giá trị chính sách được đưa ra khỏi mã nguồn thành tham số cấu hình, sửa được từ trang cài đặt của quản trị. Thay đổi tham số không cần phát hành lại giao diện nhưng mọi thay đổi đều vào nhật ký kèm người sửa và giá trị trước đó:
+#TBL|30,12,58
+#ROW|Tham số|Mặc định|Ý nghĩa
+#ROW|hold_minutes|10|Thời gian giữ ghế cho đơn trực tuyến
+#ROW|hold_extend_minutes|5|Mức gia hạn một lần khi đang ở bước thanh toán
+#ROW|proof_pending_max_minutes|60|Thời hạn chờ duyệt biên lai
+#ROW|max_seats_per_booking|8|Số ghế tối đa mỗi đơn
+#ROW|max_active_holds_per_user|3|Số đơn giữ ghế đồng thời của một khách
+#ROW|online_close_before_minutes|15|Đóng bán trực tuyến trước giờ chiếu
+#ROW|pos_close_before_minutes|0|POS được bán đến sát giờ chiếu
+#ROW|room_cleaning_minutes|15|Thời gian dọn phòng giữa hai suất
+#ROW|ads_minutes|15|Thời gian quảng cáo cộng vào khi tính giờ kết thúc
+#ROW|checkin_open_before_minutes|60|Mở soát vé trước giờ chiếu
+#ROW|checkin_late_allow_minutes|30|Cho vào muộn tối đa sau giờ bắt đầu
+#ROW|customer_cancel_allowed|false|Cho khách tự hủy vé đã thanh toán
+#ROW|customer_refund_percent|0|Tỷ lệ hoàn khi khách tự hủy
+#ROW|points_per_vnd|1/10.000|Số điểm cộng trên mỗi đồng thực trả
+#ROW|vat_percent|8|Thuế giá trị gia tăng hiển thị trên hóa đơn
+#ROW|price_rounding|1.000|Làm tròn giá đến đơn vị nghìn đồng
+#ROW|payment_confirm_mode|manual|Chế độ duyệt tay hoặc tự động qua webhook
+#ROW|refund_approval_threshold|2.000.000|Ngưỡng hoàn tiền cần cấp quản lý duyệt
+#EMPTY
+#H2|2.10 Chỉ số, KPI và sự kiện phân tích
+#P|Tài liệu nghiệp vụ định nghĩa chỉ số trước khi định nghĩa báo cáo để mọi màn hình quản trị lấy số từ cùng một công thức. Bốn khái niệm dễ bị lẫn nhất được tách rõ:
+#B|Doanh thu đã thu: tổng giao dịch được xác nhận trừ các khoản hoàn đã hoàn tất; đây là con số dùng để đối soát ngân hàng.
+#B|Doanh thu ghi nhận: phần doanh thu ghi theo thời điểm suất chiếu kết thúc, không phụ thuộc việc khách đã thanh toán hay chưa.
+#B|Tỷ lệ lấp đầy: số ghế đã bán trên tổng ghế bán được của suất; chỉ số tổng hợp theo phòng là trung bình có trọng số theo sức chứa.
+#B|Giá trị đơn trung bình: doanh thu chia số đơn đã thanh toán trong kỳ, tách riêng kênh online và POS để không làm sai lệch so sánh.
+#P|Mỗi chỉ số chỉ được coi là đo được khi đã gắn sự kiện phân tích tương ứng. Bảng dưới là danh sách sự kiện tối thiểu và thuộc tính đi kèm:
+#TBL|30,26,44
+#ROW|Sự kiện|Thời điểm ghi|Thuộc tính được phép
+#ROW|movie_viewed|Mở trang chi tiết phim|mã phim, thể loại, nguồn truy cập
+#ROW|seat_selected|Khách chọn hoặc bỏ chọn ghế|mã suất, loại ghế, số ghế đang chọn
+#ROW|booking_created|Tạo đơn giữ ghế thành công|mã đơn đã băm, kênh, số ghế
+#ROW|hold_expired|Đơn chuyển sang expired|mã suất, số phút đã giữ
+#ROW|payment_proof_submitted|Khách tải biên lai|mã đơn đã băm, số tiền
+#ROW|payment_approved|Quản lý duyệt biên lai|thời gian chờ, người duyệt
+#ROW|ticket_checked_in|Soát vé thành công|mã suất, kết quả quét, số vé còn lại
+#EMPTY
+#P|Quy tắc bắt buộc: không đưa email, số điện thoại, họ tên hay nội dung ghi chú vào thuộc tính sự kiện; mã đơn nếu cần thì dùng giá trị băm. Bản triển khai hiện mới ghi nhật ký nghiệp vụ, chưa có tầng thu thập sự kiện phân tích riêng, nên các chỉ số ở trên được tính trực tiếp từ dữ liệu đơn, thanh toán và vé.

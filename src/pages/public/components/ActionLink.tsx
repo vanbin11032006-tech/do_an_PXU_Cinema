@@ -1,0 +1,44 @@
+import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { cn } from '@/lib/format';
+
+type ActionLinkVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'dark';
+type ActionLinkSize = 'sm' | 'md' | 'lg';
+
+const VARIANTS: Record<ActionLinkVariant, string> = {
+  primary: 'bg-brand text-white shadow-glow hover:bg-brand-600 active:bg-brand-700',
+  secondary: 'border border-line bg-elevated/80 text-ink hover:border-brand/50 hover:bg-elevated',
+  outline: 'border border-brand/60 bg-brand/5 text-brand hover:bg-brand/15',
+  ghost: 'text-ink2 hover:bg-elevated/80 hover:text-ink',
+  dark: 'border border-white/15 bg-slate-950/70 text-white hover:border-white/30',
+};
+
+const SIZES: Record<ActionLinkSize, string> = {
+  sm: 'h-8 px-3 text-xs',
+  md: 'h-10 px-4 text-sm',
+  lg: 'h-12 px-6 text-[15px]',
+};
+
+export function ActionLink({ to, children, variant = 'primary', size = 'md', className, icon }: {
+  to: string;
+  children: ReactNode;
+  variant?: ActionLinkVariant;
+  size?: ActionLinkSize;
+  className?: string;
+  icon?: ReactNode;
+}) {
+  return (
+    <Link
+      to={to}
+      className={cn(
+        'inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg font-semibold transition duration-200 ease-cinema focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-2 focus-visible:ring-offset-base',
+        VARIANTS[variant],
+        SIZES[size],
+        className,
+      )}
+    >
+      {icon}
+      {children}
+    </Link>
+  );
+}

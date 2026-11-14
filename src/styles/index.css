@@ -1,0 +1,113 @@
+:root {
+  --bg-base: 11 15 25;
+  --bg-surface: 15 23 42;
+  --bg-elevated: 30 41 59;
+  --border-subtle: 51 65 85;
+  --text-primary: 248 250 252;
+  --text-secondary: 203 213 225;
+  --text-muted: 148 163 184;
+  --ring: 255 102 0;
+  color-scheme: dark;
+}
+
+html[data-theme='light'] {
+  --bg-base: 244 246 250;
+  --bg-surface: 255 255 255;
+  --bg-elevated: 241 245 249;
+  --border-subtle: 203 213 225;
+  --text-primary: 15 23 42;
+  --text-secondary: 51 65 85;
+  --text-muted: 100 116 139;
+  color-scheme: light;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { border-color: rgb(var(--border-subtle)); }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-base text-ink font-sans antialiased;
+    min-height: 100dvh;
+    background-image:
+      radial-gradient(1100px 600px at 88% -10%, rgba(255, 102, 0, 0.10), transparent 60%),
+      radial-gradient(900px 520px at 0% 0%, rgba(56, 189, 248, 0.06), transparent 55%);
+    background-attachment: fixed;
+  }
+  html[data-theme='light'] body {
+    background-image:
+      radial-gradient(1100px 600px at 88% -10%, rgba(255, 102, 0, 0.09), transparent 60%),
+      radial-gradient(900px 520px at 0% 0%, rgba(56, 189, 248, 0.08), transparent 55%);
+  }
+  h1, h2, h3, h4 { @apply font-display tracking-wide; }
+  ::selection { @apply bg-brand/30 text-ink; }
+  :focus-visible { outline: 2px solid rgb(var(--ring)); outline-offset: 2px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.28); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); background-clip: content-box; }
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+  html[data-theme='light'] input[type='date']::-webkit-calendar-picker-indicator,
+  html[data-theme='light'] input[type='time']::-webkit-calendar-picker-indicator { filter: none; }
+}
+
+@layer components {
+  .container-page { @apply mx-auto w-full max-w-[1320px] px-4 sm:px-6 lg:px-8; }
+  .card-surface {
+    @apply rounded-card border border-line/80 bg-surface/90 shadow-card;
+    backdrop-filter: blur(12px);
+  }
+  .glass {
+    background: color-mix(in srgb, rgb(var(--bg-surface)) 78%, transparent);
+    backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid color-mix(in srgb, rgb(var(--border-subtle)) 70%, transparent);
+  }
+  .field {
+    @apply w-full rounded-lg border border-line bg-base/60 px-3.5 py-2.5 text-sm text-ink placeholder:text-muted/70 transition
+      focus:border-brand/70 focus:bg-base focus:outline-none focus:ring-2 focus:ring-brand/25 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .field-error { @apply border-danger/70 focus:border-danger focus:ring-danger/20; }
+  .label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-muted; }
+  .eyebrow { @apply text-[11px] font-bold uppercase tracking-[0.24em] text-brand; }
+  .section-title { @apply font-display text-2xl font-bold uppercase tracking-wide text-ink sm:text-3xl; }
+  .hairline { @apply border-t border-line/70; }
+  .link-quiet { @apply text-ink2 underline-offset-4 transition hover:text-brand hover:underline; }
+  .text-money { font-variant-numeric: tabular-nums; }
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-elevated/70;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 animate-shimmer;
+    background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.16), transparent);
+    transform: translateX(-100%);
+  }
+  .poster-grain {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    opacity: 0.10;
+    mix-blend-mode: overlay;
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .seat-focusable:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+  .printer-only { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body { background: #fff !important; color: #000 !important; }
+  .no-print { display: none !important; }
+  .printer-only { display: block !important; }
+  .print-ticket { break-inside: avoid; box-shadow: none !important; border: 1px solid #d1d5db !important; }
+}

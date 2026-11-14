@@ -1,0 +1,117 @@
+#H1|LỜI MỞ ĐẦU
+#P|Hồ sơ tài liệu dự án PXU Cinema v2.0 mô tả một chuỗi rạp chiếu phim vận hành thật: có lịch chiếu theo phòng, sơ đồ ghế riêng cho từng phòng, giá vé thay đổi theo loại ghế và khung giờ, giữ ghế có thời hạn, thanh toán chuyển khoản kèm biên lai, duyệt tay, phát hành vé điện tử và soát vé tại cửa phòng chiếu. Bộ tài liệu gồm bốn phần: Tài liệu nghiệp vụ, Tài liệu giao diện, Tài liệu kỹ thuật Frontend và Tài liệu kỹ thuật Admin. Báo cáo này hệ thống lại nội dung đó theo bố cục của một đồ án kết thúc học phần và đối chiếu với bản triển khai thực tế của dự án.
+#P|Bài toán mà đề tài đặt ra không phải là dựng một trang giới thiệu phim, mà là làm đúng phần khó của nghiệp vụ bán vé: không bán trùng một ghế cho hai người, thu đúng số tiền mà máy chủ đã tính, giữ ghế có thời hạn và nhả ghế khi hết hạn, đối soát được dòng tiền khi khách chuyển khoản, và soát vé theo cách chặn được việc dùng lại một mã QR cho nhiều lượt vào.
+#P|Nguyên tắc xuyên suốt của hệ thống được nêu ở đầu tài liệu nghiệp vụ: máy chủ là nguồn sự thật duy nhất cho giá, tồn ghế, trạng thái đơn, quyền và thời hạn; giao diện chỉ hiển thị, thu thập đầu vào và kiểm tra sơ bộ để phản hồi nhanh. Mọi con số tiền, mọi quyết định chuyển trạng thái và mọi quyết định cấp quyền đều nằm ở phía máy chủ.
+#P|Trong quá trình thực hiện, em đã đọc và đối chiếu bốn tài liệu trên với mã nguồn hiện có, xây dựng lại phần giao diện React, cổng API Express và lớp lưu trữ MySQL theo đúng hợp đồng dữ liệu mà hồ sơ quy định (phong bì phản hồi, danh mục mã lỗi, tên trạng thái, danh sách quyền), đồng thời viết bốn kịch bản kiểm thử tự động cho các quy tắc ghế – tiền – vé và chụp ảnh mười lăm màn hình chính từ ứng dụng đang chạy với dữ liệu mẫu của dự án.
+#P|Mặc dù đã cố gắng bám sát đặc tả, đồ án vẫn còn những phần chưa hoàn thiện, được liệt kê trung thực ở mục 5.4 và phần Kết luận: thanh toán chưa nối cổng ngân hàng thật, chưa có hàng đợi gửi email, chưa có kênh thời gian thực SSE, và một số ràng buộc toàn vẹn mới được cưỡng chế ở tầng nghiệp vụ thay vì tầng cơ sở dữ liệu. Em rất mong nhận được ý kiến đóng góp của quý thầy cô.
+#P|Em xin chân thành cảm ơn!
+#PB
+#H1|MỤC LỤC
+#PB
+#H1|DANH MỤC HÌNH ẢNH
+#P|Hình 5.1: Trang chủ — hero phim đang chiếu, đặt vé nhanh, danh sách phim
+#P|Hình 5.2: Danh sách phim — lọc theo trạng thái chiếu và thể loại
+#P|Hình 5.3: Chi tiết phim — nhãn tuổi, thông tin suất chiếu, nút mua vé
+#P|Hình 5.4: Chọn ghế — sơ đồ lưới, bảy trạng thái ghế, tóm tắt đơn
+#P|Hình 5.5: Bắp nước — combo theo danh mục, giỏ hàng dính đáy màn hình
+#P|Hình 5.6: Xác nhận đơn — voucher, điểm thưởng, tổng tiền do máy chủ tính
+#P|Hình 5.7: Thanh toán QR — VietQR, đồng hồ giữ ghế theo giờ máy chủ
+#P|Hình 5.8: Vé điện tử — một vé cho mỗi ghế, mã QR và trạng thái vé
+#P|Hình 5.9: Bảng điều khiển quản trị — KPI, doanh thu bảy ngày, top phim
+#P|Hình 5.10: Hàng đợi duyệt biên lai — ảnh chứng từ, đối chiếu số tiền, hạn SLA
+#P|Hình 5.11: Suất chiếu — timeline theo phòng, cảnh báo trùng giờ
+#P|Hình 5.12: Đơn hàng — danh sách, trạng thái đơn và trạng thái thanh toán
+#P|Hình 5.13: Chi tiết đơn — thông tin khách, ghế, thanh toán, hành động theo trạng thái
+#P|Hình 5.14: Trình dựng sơ đồ ghế — lưới ô, công cụ tô, xem trước như khách
+#P|Hình 5.15: Soát vé — nhập mã thủ công, năm loại kết quả, lịch sử quét
+#PB
+#H1|PHẦN 1: GIỚI THIỆU ĐỀ TÀI
+#H2|1.1 Lý do chọn đề tài
+#H3|1.1.1. Bài toán nghiệp vụ đặt ra
+#P|Một chuỗi rạp bán vé theo suất chiếu cố định. Mỗi suất gắn với một phim, một phòng, một khung giờ; trong phòng, mỗi ghế chỉ bán được một lần cho đúng suất đó. Khác với bán hàng thông thường, ở đây tài nguyên bị chặn theo ba chiều cùng lúc: phòng, suất và ghế. Tài liệu nghiệp vụ (mục 1.1) xác định bốn mục tiêu mà hệ thống bắt buộc phải làm đúng:
+#B|Khách đặt vé nhanh, chọn ghế trực quan, thanh toán an toàn và nhận vé điện tử có mã QR.
+#B|Rạp quản lý phim, suất chiếu, giá, phòng và ghế, combo, khuyến mãi, doanh thu trên cùng một hệ thống.
+#B|Nhân viên bán vé tại quầy (POS) và soát vé chính xác, chống dùng lại vé hoặc gian lận.
+#B|Mọi thao tác nhạy cảm đều có phân quyền và nhật ký để truy vết.
+#P|Bốn mục tiêu này quy về năm việc hệ thống không được phép làm sai: bán trùng ghế, tính sai tiền, giữ ghế vô hạn, xác nhận thanh toán khống, và cho một mã vé đi qua cửa hai lần. Chỉ cần một trong năm điểm trên hỏng, hệ thống mất giá trị sử dụng trong thực tế dù giao diện có đẹp đến đâu.
+#H3|1.1.2. Hạn chế của cách quản lý hiện tại
+#P|Phần lớn rạp nhỏ và vừa hiện vận hành bằng ba công cụ rời: một bảng tính để xếp lịch chiếu, một sổ hoặc phần mềm bán hàng tại quầy, và một tài khoản ngân hàng để nhận chuyển khoản. Cách làm đó dẫn tới các hệ quả lặp lại:
+#B|Tồn ghế không có nguồn duy nhất: quầy và kênh online giữ hai bảng riêng, chỉ phát hiện bán trùng khi hai khách cùng vào một ghế.
+#B|Ghế bị găm: một khách mở nhiều đơn giữ ghế rồi bỏ đi, ghế bị khóa đến sát giờ chiếu mà không ai nhả.
+#B|Đối soát thủ công: khách chuyển khoản với nội dung tự do, kế toán phải dò sao kê bằng mắt; chuyển thiếu, chuyển thừa, chuyển sau khi hết hạn đều không có chỗ ghi nhận.
+#B|Soát vé bằng ảnh chụp màn hình: nhân viên không phân biệt được vé đã dùng, vé của suất khác hay vé đã bị hủy.
+#P|Ba điểm nghẽn đầu là bài toán dữ liệu, không phải bài toán giao diện. Chúng chỉ được giải khi ghế, hạn giữ, trạng thái thanh toán và trạng thái vé được mô hình hóa đúng và được cưỡng chế ở máy chủ.
+#H3|1.1.3. Mục tiêu và chỉ số đo được
+#P|Hồ sơ đặt mục tiêu gắn với chỉ số cụ thể thay vì mô tả định tính (Tài liệu nghiệp vụ, mục 7 và mục 11). Các chỉ số dưới đây chỉ được coi là đo được khi đã gắn sự kiện phân tích tương ứng ở mục 2.10:
+#B|Tỷ lệ lấp đầy theo từng suất và từng phòng, tính từ số ghế đã bán trên tổng ghế bán được của các suất đã chiếu trong kỳ.
+#B|Doanh thu theo ngày, theo kênh (online và POS) và theo phương thức thanh toán; doanh thu ghi nhận tại thời điểm thanh toán được xác nhận và trừ đi khoản đã hoàn.
+#B|Tỷ lệ đơn hết hạn giữ ghế trên tổng đơn tạo ra, phản ánh chất lượng luồng đặt vé và mức độ găm ghế.
+#B|Thời gian duyệt biên lai trung bình và tỷ lệ biên lai bị từ chối theo lý do, dùng để chỉnh SLA và hướng dẫn khách.
+#B|Tỷ lệ vé không đến (no-show) và số lần quét lỗi tại cửa phòng chiếu.
+#H3|1.1.4. Giá trị thực tiễn của đề tài
+#B|Với khách: thấy đúng ghế còn trống tại thời điểm mở sơ đồ, biết chính xác số tiền phải chuyển, biết mình đang giữ ghế trong bao lâu, và nhận vé điện tử ngay khi thanh toán được xác nhận.
+#B|Với nhân viên: một hàng đợi biên lai duyệt được bằng bàn phím, một màn hình soát vé trả kết quả tức thì kèm lý do, một màn hình POS dùng chung sơ đồ ghế với kênh online.
+#B|Với quản lý: số liệu lấy từ máy chủ theo cùng một định nghĩa chỉ số, không phải từ bảng tính do nhân viên tự tổng hợp.
+#B|Với đồ án: đây là bài toán đủ rộng để thực hành phân tích nghiệp vụ có máy trạng thái, thiết kế dữ liệu có ràng buộc, thiết kế giao diện theo trạng thái và viết kiểm thử cho các quy tắc ghế – tiền – vé.
+#H2|1.2 Mục đích nghiên cứu
+#H3|1.2.1. Mục tiêu tổng quát
+#P|Xây dựng hệ thống web đặt vé và quản lý rạp chiếu phim PXU Cinema theo đúng đặc tả trong hồ sơ tài liệu dự án: phía khách tìm phim, chọn suất, chọn ghế, thêm bắp nước, áp voucher, thanh toán QR và nhận vé điện tử; phía nhân viên bán vé tại quầy, soát vé và quản lý ca; phía quản trị vận hành phim, suất chiếu, phòng và sơ đồ ghế, giá, combo, đơn hàng, hoàn tiền và báo cáo. Toàn bộ quyết định về giá, tồn ghế, trạng thái và quyền do máy chủ thực hiện.
+#H3|1.2.2. Mục tiêu chức năng
+#P|Hồ sơ chia hệ thống thành mười hai phân hệ theo nghiệp vụ. Đây cũng là phạm vi chức năng của đề tài:
+#TBL|8,22,42,18,10
+#ROW|Mã|Phân hệ|Mục đích|Người dùng chính|Ưu tiên
+#ROW|M01|Rạp và phòng chiếu|Thông tin rạp, phòng, loại phòng, trạng thái bảo trì|admin, manager|P1
+#ROW|M02|Phim và thể loại|Hồ sơ phim, thể loại, nhãn tuổi, poster, trailer, trạng thái chiếu|admin|P1
+#ROW|M03|Suất chiếu|Lịch chiếu theo phòng, chống trùng giờ, thời gian dọn phòng, mở và đóng bán|admin, manager|P1
+#ROW|M04|Sơ đồ ghế|Lưới ô tùy biến, loại ghế, ghế đôi, ô lối đi và ô khuyết, chặn ghế theo suất|admin, manager|P1
+#ROW|M05|Tài khoản và xác thực|Đăng ký, đăng nhập, quên mật khẩu, hồ sơ, phân quyền theo vai trò|tất cả|P1
+#ROW|M06|Đặt vé và giữ ghế|Tạo đơn giữ ghế, đồng hồ đếm ngược, đổi ghế, hủy đơn đang giữ|khách, staff|P1
+#ROW|M07|Thanh toán QR|Sinh mã VietQR, nội dung chuyển khoản, tải biên lai, duyệt hoặc từ chối|khách, manager|P1
+#ROW|M08|Vé và soát vé|Phát hành vé theo ghế, mã QR, soát vé nguyên tử, hoàn tác check-in|staff, manager|P1
+#ROW|M09|POS và ca làm việc|Bán tại quầy, nhiều phương thức thanh toán, mở và đóng ca, in lại vé|staff|P1
+#ROW|M10|Voucher, điểm và hạng|Mã giảm giá theo điều kiện, tích điểm, hạng thành viên, quyền lợi|khách, admin|P1–P2
+#ROW|M11|Báo cáo và dashboard|Doanh thu, lấp đầy, top phim, ca làm việc, voucher, hoàn tiền|manager, admin|P1
+#ROW|M12|Cấu hình, phân quyền, nhật ký|Tham số hệ thống, cấu hình thanh toán, quyền theo mã, nhật ký thao tác|admin|P1
+#EMPTY
+#H3|1.2.3. Mục tiêu kỹ thuật
+#B|Tách bạch trạng thái theo đúng phân loại trong hồ sơ: dữ liệu máy chủ do tầng truy vấn quản lý, phiên đăng nhập giữ ở một store riêng, nháp đặt vé chỉ lưu trường không nhạy cảm, trạng thái lọc và trang nằm trên URL.
+#B|Mọi truy cập mạng đi qua một mô-đun duy nhất, có phong bì phản hồi thống nhất, lỗi nghiệp vụ mang mã ổn định và thông điệp tiếng Việt, tự làm mới phiên khi gặp 401.
+#B|TypeScript strict, không dùng any để lách lỗi nghiệp vụ; tiền là số nguyên VND; thời điểm lưu theo ISO 8601, ngày nghiệp vụ theo Asia/Ho_Chi_Minh; riêng ngày chiếu và giờ chiếu giữ theo giờ địa phương của rạp.
+#B|Kiểm thử các hàm và luồng quan trọng: giữ ghế, hết hạn giữ ghế, voucher, duyệt biên lai, phát hành vé, soát vé, chống trùng suất chiếu.
+#H3|1.2.4. Mục tiêu thực tiễn
+#B|Không bán trùng ghế trong mọi tình huống, kể cả khi hai khách bấm chọn cùng lúc.
+#B|Không tạo hai đơn từ một ý định đặt vé khi mạng chập chờn hoặc khách bấm hai lần.
+#B|Mọi khoản tiền truy vết được: giao dịch, biên lai, người duyệt, thời điểm duyệt và mã tham chiếu hoàn tiền.
+#B|Nhân viên nhìn thấy đúng việc cần làm hôm nay: biên lai chờ duyệt, suất chiếu sắp diễn ra, ca đang mở.
+#H2|1.3 Phạm vi đề tài
+#H3|1.3.1. Phạm vi về chức năng (nghiệp vụ)
+#B|Trong phạm vi: bán vé trực tuyến và bán tại quầy cho cụm rạp một và nhiều chi nhánh; quản lý phim, suất chiếu, phòng, sơ đồ ghế, bảng giá và phụ thu; combo bắp nước; voucher; giữ ghế có thời hạn; thanh toán QR kèm duyệt biên lai; phát hành vé điện tử; soát vé; hủy đơn và hoàn tiền; điểm thưởng; báo cáo và nhật ký.
+#B|Ngoài phạm vi (ghi rõ để tránh hiểu nhầm): kết nối cổng thanh toán thật (VNPay, MoMo, ZaloPay), đối soát ngân hàng tự động bằng webhook, hóa đơn điện tử, đặt vé qua ứng dụng di động native, và các nghiệp vụ kế toán tổng hợp.
+#B|Các phân hệ P1 (M01–M09, M12) là phần bắt buộc của đồ án và đã được cài đặt ở mức chạy được; M10 và M11 ở mức P1–P2 được cài đặt một phần; các hạng mục P3 chỉ được thiết kế.
+#H3|1.3.2. Phạm vi về kỹ thuật
+#B|Nền tảng giao diện: React 18.3, TypeScript 5.7 ở chế độ strict, Vite 6, React Router 6.28, TanStack Query 5, Zustand 5, Tailwind CSS 3.4, react-hook-form 7 kèm zod 3.
+#B|Phía máy chủ: Express 5 bọc một engine nghiệp vụ TypeScript dùng chung với giao diện, dữ liệu lưu trong MySQL/MariaDB 8 của XAMPP qua mysql2. Toàn bộ API đi qua một điểm vào duy nhất, chia thành 158 hàm nghiệp vụ có kiểu dữ liệu rõ ràng.
+#B|Thư viện nghiệp vụ đặc thù: qrcode.react sinh mã QR vé và mã QR chuyển khoản, html5-qrcode đọc mã bằng camera, recharts vẽ biểu đồ quản trị, dayjs xử lý thời gian theo múi giờ Việt Nam.
+#B|Kiểm thử: Vitest chạy bốn kịch bản tích hợp trên engine nghiệp vụ với cơ sở dữ liệu tạm, không phụ thuộc trình duyệt.
+#H3|1.3.3. Phạm vi về dữ liệu và nội dung
+#B|Dữ liệu mẫu của dự án: 42 phim, 3 cụm rạp, 8 phòng chiếu, 1.352 suất chiếu trải trên mười bốn ngày, 800 đơn hàng ở nhiều trạng thái, 9 tài khoản tương ứng bốn vai trò, 8 combo bắp nước, 6 voucher, 4 banner, 3 bản tin và 4 đánh giá đã duyệt.
+#B|Nội dung phim gồm mô tả, đạo diễn, diễn viên, thể loại, thời lượng, ngày khởi chiếu, nhãn tuổi theo quy định (P, K, T13, T16, T18), poster và trailer.
+#B|Ngôn ngữ tiếng Việt, tiền VND, định dạng vi-VN; thời điểm lưu UTC, ngày nghiệp vụ theo Asia/Ho_Chi_Minh; giờ chiếu hiển thị và nhập theo giờ rạp.
+#H3|1.3.4. Giới hạn của đề tài
+#B|Thanh toán mới ở mức chuyển khoản QR kèm duyệt tay: hệ thống sinh mã VietQR, nhận ảnh biên lai và chờ người duyệt. Chưa có webhook ngân hàng nên không thể tự xác nhận giao dịch.
+#B|Thông báo chỉ hiển thị trong ứng dụng (chuông thông báo); chưa có hàng đợi gửi email hay SMS, nên câu “vé đã gửi tới email” trong giao diện là mô phỏng luồng nghiệp vụ.
+#B|Chưa có kênh thời gian thực SSE như hồ sơ đề xuất; sơ đồ ghế cập nhật bằng cách hỏi lại máy chủ mỗi năm giây và làm mới khi cửa sổ được kích hoạt.
+#B|Chưa có giới hạn tần suất theo IP và theo tài khoản; mật khẩu được băm bằng SHA-256 kèm chuỗi cố định (pepper) thay vì argon2id hoặc bcrypt; access token lưu trong localStorage thay vì cookie httpOnly như khuyến nghị.
+#B|Khóa idempotency chống trùng đơn đang lưu trong bộ nhớ tiến trình, chưa lưu vào cơ sở dữ liệu, nên chỉ hiệu lực trong một phiên máy chủ.
+#B|Chưa có bộ kiểm thử thành phần và kiểm thử E2E Playwright; bốn kịch bản hiện có chạy ở tầng nghiệp vụ và tầng lưu trữ.
+#H2|1.4 Đối tượng sử dụng ứng dụng
+#P|Hồ sơ xác định năm vai trò (Tài liệu nghiệp vụ, mục 2.1). Bản triển khai cài đặt đủ năm vai trò, trong đó khách vãng lai không cần tài khoản, khách hàng đặt vé trực tuyến, nhân viên bán vé và soát vé, quản lý rạp duyệt biên lai và hoàn tiền, quản trị hệ thống nắm toàn quyền.
+#TBL|18,26,56
+#ROW|Mã vai trò|Tên|Nhiệm vụ chính
+#ROW|guest|Khách vãng lai|Xem phim, lịch chiếu, rạp, bắp nước, tin tức; không đặt vé được vì cần tài khoản để giữ ghế.
+#ROW|customer|Khách hàng|Đặt vé, chọn ghế, mua combo, áp voucher, thanh toán, xem vé của tôi, tích điểm và đổi quà.
+#ROW|staff|Nhân viên quầy và soát vé|Bán vé tại quầy, mở và đóng ca, soát vé theo mã QR hoặc mã nhập tay, xem vé trong ngày, in lại vé.
+#ROW|manager|Quản lý rạp|Duyệt hoặc từ chối biên lai, hủy đơn, tạo và hủy suất chiếu, hoàn tiền, xem báo cáo trong phạm vi rạp được gán.
+#ROW|admin|Quản trị hệ thống|Toàn quyền: phim, phòng, sơ đồ ghế, bảng giá, người dùng, cấu hình thanh toán, nhật ký, cấu hình hệ thống.
+#EMPTY
+#P|Nguyên tắc phân quyền được áp dụng ở cả hai phía: máy chủ kiểm tra quyền cho từng yêu cầu và mặc định từ chối; việc ẩn nút ở giao diện chỉ để dễ dùng, không phải ranh giới bảo mật. Trong mã nguồn hiện có 77 điểm kiểm tra quyền nằm rải ở các miền nghiệp vụ, mỗi điểm trả về mã lỗi FORBIDDEN kèm tên quyền bị thiếu để giao diện hiển thị đúng thông điệp.

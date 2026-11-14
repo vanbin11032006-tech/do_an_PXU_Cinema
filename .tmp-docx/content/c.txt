@@ -1,0 +1,145 @@
+#H1|PHẦN 3: THIẾT KẾ HỆ THỐNG
+#H2|3.1 Thiết kế cơ sở dữ liệu
+#H3|3.1.1. Mô hình dữ liệu nghiệp vụ
+#P|Hồ sơ mô tả thực thể và thuộc tính chính ở mục 6, dùng snake_case cho cột trong cơ sở dữ liệu và camelCase cho JSON trả về giao diện. Bảng dưới tóm tắt các thực thể cốt lõi:
+#TBL|20,80
+#ROW|Thực thể|Thuộc tính nghiệp vụ chính
+#ROW|User|id, name, email duy nhất, phone, passwordHash, role, status, emailVerified, points, tier, cinemaIds, createdAt
+#ROW|Movie|id, title, slug, description, genres, duration, age nhãn P/K/T13/T16/T18, releaseDate, director, cast, poster, trailer, rating, status, deletedAt
+#ROW|Cinema / Room|Rạp gồm tên, địa chỉ, thành phố; phòng gồm rạp, tên, loại 2D/3D/IMAX/Gold Class, sức chứa, trạng thái
+#ROW|Seat|id, roomId, code, rowLabel, colIndex, gridX, gridY, type thường/VIP/đôi/lối đi/khuyết, span
+#ROW|Showtime|id, movieId, cinemaId, roomId, showDate, startTime, endTime, format, basePrice, status, blockedSeatIds
+#ROW|Booking|code duy nhất, userId, showtimeId, channel online/POS, staffId, shiftId, status, seats snapshot, combos snapshot, tiền vé, tiền combo, giảm giá, điểm, thuế, tổng, holdExpiresAt, customerName/Email/Phone, idempotencyKey
+#ROW|Payment|bookingId, provider, method, amount, status, proofUrl, proofHash, paidAmount, submittedAt, reviewedBy, reviewedAt, rejectReasonCode, transferContent
+#ROW|Ticket|code duy nhất, bookingId, seatId, seatCode, status valid/used/cancelled/expired, checkedInAt, checkedInBy
+#ROW|Voucher / VoucherUsage|code, type percent/fixed, value, minOrder, maxDiscount, startsAt, expiresAt, totalUses, usedCount, perUser, applyTo, status; bảng lượt dùng theo đơn và người
+#ROW|Refund|code, bookingId, amount, scope, reason, status bốn bước, requestedBy, approvedBy, reference, completedAt
+#ROW|Shift|id, staffId, cinemaId, openedAt, openingCash, closedAt, countedCash, difference, note
+#ROW|AuditLog|actorId, action, entity, entityId, before, after, reason, ip, createdAt
+#EMPTY
+#H3|3.1.2. Quan hệ chính
+#P|Cinema 1─n Room 1─n Seat Rạp có nhiều phòng, mỗi phòng có một sơ đồ ghế.
+#P|Movie 1─n Showtime n─1 Room Mỗi suất chiếu gắn một phim, một phòng và một khung giờ.
+#P|Showtime 1─n Booking n─1 User Đơn thuộc một suất và một khách (trừ đơn POS của khách lẻ).
+#P|Booking 1─n BookingSeat / BookingCombo / Payment / Ticket / Refund
+#P|Booking 1─1 Ticket theo ghế Vé được sinh từ đơn, mỗi ghế một vé.
+#P|Voucher 1─n VoucherUsage n─1 User Lượt dùng gắn với đơn và người dùng để chặn vượt giới hạn.
+#P|Shift 1─n Booking Đơn POS gắn ca làm việc để đối chiếu tiền mặt cuối ca.
+#H3|3.1.3. Thiết kế triển khai trên MySQL
+#P|Bản triển khai dùng MySQL/MariaDB 8 theo hướng “tài liệu có lược đồ”: mỗi tập dữ liệu nghiệp vụ là một bảng, các trường vô hướng cần truy vấn hoặc lập chỉ mục được nâng thành cột có kiểu rõ ràng, phần còn lại của bản ghi giữ trong cột data kiểu JSON có ràng buộc json_valid. Cách làm này giữ được khả năng lọc và đối soát trực tiếp bằng SQL mà không phải viết lại mô hình mỗi khi nghiệp vụ mở rộng. Lược đồ hiện tại sinh ra 29 bảng; các bảng trọng yếu:
+#TBL|16,22,62
+#ROW|Bảng|Khóa và chỉ mục|Cột nghiệp vụ chính
+#ROW|users|row_key, unique email|email, role, status, points
+#ROW|movies|row_key, unique slug|title, status, release_date
+#ROW|showtimes|row_key, index theo phòng và ngày|movie_id, cinema_id, room_id, show_date, start_time, status
+#ROW|seats|row_key|room_id, code, row_label, col_index, seat_type
+#ROW|bookings|row_key, unique code|user_id, showtime_id, status, channel, final_amount, created_at
+#ROW|payments|row_key|booking_id, provider, status, amount, mã giao dịch, thời điểm gửi biên lai
+#ROW|tickets|row_key, unique code|booking_id, seat_id, status, thời điểm soát vé
+#ROW|vouchers|row_key, unique code|voucher_type, value, status, used_count
+#ROW|audit_logs|row_key|actor_id, action, entity, logged_at
+#EMPTY
+#P|Cột row_key đóng vai trò khóa chính kỹ thuật để bản ghi có thể được ghi lại toàn bộ khi cập nhật, trong khi id giữ nguyên mã nghiệp vụ mà giao diện đang dùng. Các cột vô hướng như status, final_amount hay show_date được giữ song song với bản ghi JSON để báo cáo và kiểm tra chéo không phải mở toàn bộ tài liệu.
+#H3|3.1.4. Ràng buộc toàn vẹn
+#P|Các ràng buộc cứng phải luôn đúng; vi phạm được coi là lỗi hệ thống và phải cảnh báo:
+#B|Một ghế chỉ xuất hiện trong tối đa một đơn đang hiệu lực của cùng suất chiếu; ràng buộc được kiểm tra trong cùng lần ghi tạo đơn giữ ghế.
+#B|booking.final_amount bằng tổng tiền vé cộng tiền combo trừ giảm giá voucher và giảm giá điểm, cộng thuế; mọi giá trị lấy từ ảnh chụp tại thời điểm tạo đơn.
+#B|Tổng tiền các giao dịch đã thanh toán trừ các khoản hoàn đã hoàn tất bằng số tiền đã thu của đơn.
+#B|Mỗi vé gắn đúng một ghế và một đơn; số vé của một đơn đã thanh toán bằng số ghế của đơn.
+#B|Vé chỉ chuyển từ valid sang used một lần; hoàn tác check-in phải có lý do và để lại nhật ký.
+#B|Không xóa cứng đơn, giao dịch, vé và nhật ký; chỉ đổi trạng thái hoặc ẩn danh theo chính sách lưu trữ.
+#H3|3.1.5. Nhóm bảng theo nghiệp vụ
+#P|Cơ sở dữ liệu được chia thành sáu nhóm theo nghiệp vụ. Cách chia này được giữ nguyên khi triển khai vì nó phản ánh ranh giới trách nhiệm giữa các vai trò: kế toán chỉ cần nhóm thanh toán, nhân viên quầy chỉ cần nhóm bán hàng và ca, quản trị mới cần nhóm cấu hình.
+#TBL|18,34,48
+#ROW|Nhóm|Bảng chính|Ghi chú thiết kế
+#ROW|Người dùng và bảo mật|users, sessions, audit_logs, notifications|Vai trò lưu trên người dùng, quyền suy ra từ vai trò; nhật ký chỉ thêm
+#ROW|Danh mục rạp|cinemas, rooms, seats, movies, showtimes|Sơ đồ ghế tách khỏi suất chiếu; chặn ghế theo suất lưu riêng
+#ROW|Bán hàng|bookings, payments, tickets, checkin_logs, shifts|Đơn chứa ảnh chụp ghế và combo; vé là bản ghi riêng từng ghế
+#ROW|Hoàn và ngoại lệ|refunds, payment_exceptions|Tách người yêu cầu và người duyệt; mọi khoản hoàn có mã tham chiếu
+#ROW|Marketing và thành viên|vouchers, voucher_usages, point_transactions, membership_tiers, banners, news, reviews, favorites|Lượt voucher gắn với đơn để trả lại khi hủy
+#ROW|Cấu hình và nội dung|app_settings, static_pages, price_rules, combos|Tham số hệ thống sửa được từ giao diện, có nhật ký thay đổi
+#EMPTY
+#P|Việc giữ đúng ranh giới nhóm giúp xác định nhanh phạm vi khi một yêu cầu chỉ liên quan một nhóm, và giúp kiểm soát quyền ở mức nhóm — ví dụ chỉ quản lý và quản trị mới đọc được nhóm hoàn tiền và ngoại lệ.
+#H2|3.2 Kiến trúc hệ thống
+#H3|3.2.1. Nguyên tắc nền tảng
+#P|Máy chủ là nguồn sự thật duy nhất cho giá, tồn ghế, trạng thái, quyền và thời hạn. Giao diện hiển thị, thu thập đầu vào và kiểm tra sơ bộ để phản hồi nhanh, không quyết định nghiệp vụ. Cụ thể, ba thứ không bao giờ được tính ở trình duyệt: tổng tiền và số tiền cần chuyển, danh sách ghế còn trống, và danh sách hành động hợp lệ trên một đơn. Danh sách hành động do máy chủ trả về theo trạng thái, nhờ đó khi quy tắc đổi ở máy chủ thì giao diện không phải sửa.
+#H3|3.2.2. Sơ đồ kiến trúc
+#P|Trình duyệt
+#P|└─ main.tsx → AppProviders (QueryClient, Auth, Router, Toast, ErrorBoundary)
+#P|└─ router.tsx — 56 tuyến, lazy theo khu vực
+#P|├─ pages/public, pages/booking, pages/account ← giao diện khách
+#P|├─ pages/staff ← POS, soát vé, ca làm việc
+#P|├─ pages/admin ← 23 màn hình quản trị
+#P|├─ components/ui, layout, common ← thư viện thành phần và bố cục
+#P|├─ store (Zustand) ← phiên đăng nhập, nháp đặt vé, thông báo
+#P|└─ api/ ← một điểm vào duy nhất, phong bì { data, error }
+#P|└─ HTTPS → POST /api/rpc { fn, args } → Express 5
+#P|└─ engine nghiệp vụ (src/mock) → MySQL/MariaDB 8
+#P|Việc phân loại trạng thái là bắt buộc và được quy định rõ trong hồ sơ, nhằm chặn hai lỗi phổ biến: sao chép dữ liệu máy chủ vào store toàn cục dẫn tới dữ liệu cũ, và lưu token vào nơi không thu hồi được.
+#TBL|16,26,30,28
+#ROW|Loại trạng thái|Công cụ|Ví dụ|Không được
+#ROW|Dữ liệu máy chủ|TanStack Query|phim, suất chiếu, sơ đồ ghế, đơn|Sao chép vào store toàn cục
+#ROW|Phiên đăng nhập|Zustand|người dùng, vai trò, danh sách quyền|Suy ra quyền từ giao diện
+#ROW|Nháp đặt vé|Zustand + sessionStorage|suất đang chọn, ghế đã chọn, thông tin liên hệ|Lưu thông tin thanh toán
+#ROW|Trạng thái URL|Search params|bộ lọc, trang, từ khóa|Giữ trong state riêng làm lệch URL
+#ROW|Trạng thái form|State cục bộ của form|giá trị ô nhập, lỗi từng trường|Dùng làm nguồn dữ liệu nghiệp vụ
+#ROW|Giao diện tạm|useState|dialog, tab, bottom sheet|—
+#EMPTY
+#H3|3.2.3. Lớp API và hợp đồng dữ liệu
+#B|Cơ sở: một điểm vào POST /api/rpc nhận cặp mã hàm và mảng tham số, trả về phong bì thống nhất. Toàn bộ 158 hàm nghiệp vụ đi qua đúng một đường, nhờ đó kiểm tra phiên, kiểm tra quyền, tuần tự hóa ghi và dịch lỗi chỉ cần cài đặt một lần.
+#B|Phong bì thành công: { data, token? } — token chỉ xuất hiện ở hai hàm đăng nhập và đăng ký, dùng để cấp phiên mới.
+#B|Phong bì lỗi: { error: { code, message, details, status } } — mã lỗi trùng với danh mục ở mục 2.9, details chứa thông tin theo ngữ cảnh như danh sách ghế bị mất hoặc lỗi từng trường.
+#B|Phiên: token mang trong header Authorization dạng Bearer; máy chủ tra bảng phiên để xác định người dùng; gặp 401, giao diện xóa token và chuyển về trang đăng nhập kèm đường dẫn quay lại.
+#B|Ghi tuần tự: mọi yêu cầu làm thay đổi dữ liệu được xếp hàng trong một tiến trình, nhờ đó hai yêu cầu giữ cùng một ghế không thể chen vào nhau giữa bước kiểm tra và bước ghi.
+#B|Thử lại: chỉ áp dụng cho yêu cầu đọc hoặc yêu cầu ghi có khóa idempotency; không thử lại lỗi 4xx vì đó là lỗi nghiệp vụ.
+#H2|3.3 Thiết kế giao diện
+#H3|3.3.1. Ngôn ngữ hình ảnh và token
+#B|Cảm xúc: điện ảnh, sang trọng, tập trung vào poster và suất chiếu; nền tối để ảnh phim nổi bật, nhưng vùng đọc nhiều chữ vẫn giữ tương phản cao.
+#B|Màu nhấn cam #ff6600 cho hành động chính; vàng cho hạng VIP, điểm thưởng và đánh giá sao; hồng cho ghế đôi; xanh cho trạng thái hợp lệ.
+#B|Poster tỉ lệ 2:3, banner 16:9 và hero 21:9 trên desktop; ảnh tải chậm, có ảnh dự phòng khi lỗi để không nhảy bố cục.
+#P|Các token được khai báo bằng biến CSS trong tệp kiểu dùng chung và ánh xạ vào Tailwind, không rải giá trị màu trong từng thành phần:
+#TBL|20,34,46
+#ROW|Nhóm|Token|Giá trị và ghi chú
+#ROW|Nền|bg-base, bg-surface, bg-elevated|#0b0f19, #0f172a, #1e293b; chế độ sáng đổi bằng thuộc tính data-theme
+#ROW|Chữ|text-primary, text-secondary, text-muted|#f8fafc, #cbd5e1, #94a3b8; chữ phụ đạt tương phản tối thiểu 4,5:1
+#ROW|Thương hiệu|brand|#ff6600, hover #ea580c, active #c2410c
+#ROW|Trạng thái|success, warning, danger, info|#22c55e, #f59e0b, #ef4444, #38bdf8
+#ROW|Ghế|seat-standard, seat-vip, couple|Xám thép, cam viền vàng, hồng #ec4899
+#ROW|Bo góc|8 / 12 / 16 px|Nút và ô nhập, thẻ, hộp thoại
+#ROW|Chuyển động|150–250 ms|Easing ease-out; tôn trọng prefers-reduced-motion
+#EMPTY
+#H3|3.3.2. Thư viện thành phần
+#P|Thư viện thành phần chia làm ba nhóm. Nhóm nguyên thủy gồm nút, ô nhập, chọn, công tắc, nhãn trạng thái, thẻ, hộp thoại, tab, thông báo nổi, khung xương và trạng thái rỗng. Nhóm nghiệp vụ gồm sơ đồ ghế, đồng hồ giữ ghế, thẻ phim, dải ngày, nút suất chiếu, thẻ vé, khung tải biên lai và bảng đối chiếu thanh toán. Nhóm bố cục gồm bốn khung: khách, đặt vé, tài khoản, nhân viên và quản trị.
+#P|Nguyên tắc: không thêm thư viện giao diện nếu thành phần và CSS hiện có đáp ứng được; thành phần dùng chung không biết gì về nghiệp vụ, còn thành phần nghiệp vụ không tự quyết định số tiền hay trạng thái. Sơ đồ ghế, thẻ phim và ô ghế đều được ghi nhớ (memo) để tránh vẽ lại toàn bộ lưới khi chỉ một ghế đổi trạng thái.
+#H3|3.3.3. Bản đồ màn hình phía khách
+#B|/ — trang chủ: hero phim đang chiếu, khối đặt vé nhanh bốn bước (phim, rạp, ngày, suất), phim đang chiếu và sắp chiếu, combo nổi bật, tin tức.
+#B|/phim và /phim/:slug — danh sách có lọc theo trạng thái, thể loại, nhãn tuổi; chi tiết phim có nhãn tuổi, thông tin suất chiếu và nút mua vé.
+#B|/lich-chieu — lịch chiếu mười bốn ngày, lọc theo rạp và định dạng, nhóm theo phim và định dạng.
+#B|/rap, /bap-nuoc, /khuyen-mai, /trang/:slug — rạp, menu bắp nước, tin tức và trang tĩnh.
+#B|/dat-ve/:showtimeId/ghe — chọn ghế với sơ đồ lưới, chú giải bảy trạng thái, thẻ tóm tắt dính và đồng hồ giữ ghế.
+#B|/dat-ve/:bookingCode/bap-nuoc — chọn combo theo danh mục, bộ đếm giới hạn, nhãn hết hàng.
+#B|/dat-ve/:bookingCode/xac-nhan — xem lại đơn, áp voucher, dùng điểm, nhập thông tin liên hệ, đồng ý điều khoản.
+#B|/thanh-toan/:bookingCode — mã VietQR, thông tin chuyển khoản sao chép được, tải biên lai, trạng thái chờ duyệt.
+#B|/ve/:bookingCode — vé điện tử từng ghế, mã QR, trạng thái vé, khối combo nhận tại quầy, in và lưu PDF.
+#B|/tai-khoan và các trang con — hồ sơ, vé của tôi, điểm thưởng, thông báo; /dang-nhap, /dang-ky, /quen-mat-khau, /dat-lai-mat-khau, /xac-thuc-email.
+#H3|3.3.4. Bản đồ màn hình quản trị và nhân viên
+#B|/admin — bảng điều khiển: doanh thu hôm nay, doanh thu tháng, vé bán, tỷ lệ lấp đầy, đơn chờ duyệt, đơn hết hạn; biểu đồ doanh thu bảy ngày và top phim; tự làm mới mỗi sáu mươi giây.
+#B|/admin/phim, /admin/suat-chieu — danh sách phim và timeline suất chiếu theo phòng, cảnh báo trùng giờ ngay khi chọn phòng và giờ bắt đầu.
+#B|/admin/rap, /admin/phong/:id/so-do-ghe — danh sách rạp, phòng và trình dựng sơ đồ ghế dạng lưới có công cụ tô, sinh nhanh, xem trước như khách.
+#B|/admin/bang-gia, /admin/combo — ma trận giá theo loại ngày, khung giờ và loại phòng; quản lý combo và tồn kho.
+#B|/admin/don-hang, /admin/don-hang/:id — hàng đợi đơn có lọc theo trạng thái, kênh, rạp; chi tiết đơn có khối tiền, vé, thanh toán, biên lai và hành động theo trạng thái.
+#B|/admin/duyet-bien-lai — hàng đợi hai khung: danh sách chờ bên trái, ảnh biên lai và khối đối chiếu bên phải, thao tác bằng phím tắt.
+#B|/admin/hoan-tien, /admin/giao-dich-bat-thuong — yêu cầu hoàn theo bốn bước và bốn loại giao dịch bất thường.
+#BL|/admin/voucher, /admin/thanh-vien, /admin/nguoi-dung, /admin/thanh-toan-qr, /admin/banner-tin-tuc, /admin/danh-gia, /admin/bao-cao, /admin/nhat-ky, /admin/cai-dat — các module còn lại.
+#B|/staff/quet-ve, /staff/ban-ve, /staff/ve-trong-ngay, /staff/ca-lam-viec — soát vé, POS, vé trong ngày và ca làm việc.
+#H3|3.3.5. Danh mục trạng thái hiển thị
+#P|Giá trị dữ liệu là snake_case tiếng Anh; nhãn chỉ dùng ở giao diện. Không tạo trạng thái ngoài bảng. Mỗi nhãn gồm chữ và màu token, không chỉ dựa vào màu để biểu thị trạng thái.
+#TBL|22,58,20
+#ROW|Đối tượng|Giá trị và nhãn|Màu
+#ROW|Đơn|holding Đang giữ ghế · confirmed Đã thanh toán · completed Đã hoàn thành · expired Hết hạn · cancelled Đã hủy|cam, xanh, xám, đỏ nhạt, đỏ
+#ROW|Thanh toán|pending Chờ thanh toán · proof_submitted Chờ duyệt · paid Đã thanh toán · rejected Bị từ chối · refunded Đã hoàn|vàng, xanh dương, xanh lá, đỏ, tím
+#ROW|Vé|valid Chưa sử dụng · used Đã sử dụng · cancelled Đã hủy · expired Hết hạn|xanh lá, xám, đỏ, xám nhạt
+#ROW|Suất chiếu|scheduled Đã lên lịch · selling Đang mở bán · closed Đã đóng bán · finished Đã kết thúc|xám, xanh, vàng, xám nhạt
+#ROW|Hoàn tiền|requested Chờ duyệt · approved Đã duyệt · processing Đang xử lý · completed Hoàn tất · rejected Từ chối|vàng, xanh dương, xanh dương, xanh lá, đỏ
+#ROW|Phim|coming_soon Sắp chiếu · now_showing Đang chiếu · ended Đã kết thúc|vàng, xanh lá, xám
+#EMPTY

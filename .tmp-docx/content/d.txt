@@ -1,0 +1,187 @@
+#H1|PHẦN 4: CÀI ĐẶT VÀ THỰC NGHIỆM
+#H2|4.1 Môi trường phát triển
+#B|Hệ điều hành Windows 10 (64-bit), trình soạn thảo Visual Studio Code, trình duyệt kiểm thử Chrome và Edge ở phiên bản mới nhất.
+#B|Node.js 24.19 và npm 11.17; TypeScript biên dịch bằng tsc ở chế độ strict, không bật skipLibCheck cho mã nguồn dự án.
+#B|MySQL/MariaDB 8 của XAMPP (máy chủ 127.0.0.1:3306, cơ sở dữ liệu pxu_cinema); lược đồ và dữ liệu mẫu được tạo tự động trong lần khởi động đầu tiên.
+#B|Lệnh chạy: npm run dev khởi động đồng thời API (cổng 5000) và máy chủ phát triển Vite (cổng 5173); npm run build chạy kiểm tra kiểu rồi đóng gói; npm test chạy bốn kịch bản kiểm thử.
+#B|Biến môi trường: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME cho lớp lưu trữ; API_HOST, API_PORT cho máy chủ; VITE_API_URL để trỏ giao diện tới API khác nguồn khi chạy bản tĩnh. Lưu ý biến VITE_* là biến công khai vì bị nhúng vào gói tải về, không dùng để chứa bí mật.
+#H2|4.2 Các công nghệ và thư viện sử dụng
+#TBL|18,26,12,44
+#ROW|Thành phần|Công nghệ|Phiên bản|Vai trò trong hệ thống
+#ROW|Giao diện|React|18.3|Xây dựng trang và thành phần theo mô hình hàm, chia gói theo tuyến
+#ROW|Ngôn ngữ|TypeScript (strict)|5.7|Kiểm tra kiểu tĩnh cho toàn bộ mã nguồn giao diện và máy chủ
+#ROW|Định tuyến|React Router|6.28|56 tuyến, tuyến lồng nhau, chốt truy cập theo vai trò
+#ROW|Dữ liệu máy chủ|TanStack Query|5.62|Bộ nhớ đệm theo khóa, làm mới định kỳ, hủy yêu cầu
+#ROW|Trạng thái|Zustand|5.0|Phiên đăng nhập, nháp đặt vé, thông báo nổi
+#ROW|Biểu mẫu|react-hook-form + zod|7.54 / 3.24|Kiểm tra dữ liệu vào, gắn lỗi từ máy chủ vào đúng trường
+#ROW|Giao diện|Tailwind CSS + plugin forms|3.4|Token màu, khoảng cách, bo góc; không viết CSS rời rạc
+#ROW|Đóng gói|Vite|6.0|Máy chủ phát triển, chia gói theo react, biểu đồ và QR
+#ROW|Máy chủ|Express|5.3|Một điểm vào API, xử lý lỗi tập trung, kiểm tra sức khỏe
+#ROW|Cơ sở dữ liệu|MySQL/MariaDB + mysql2|8 / 3.24|29 bảng, cột vô hướng cho truy vấn, cột JSON cho bản ghi đầy đủ
+#ROW|Mã QR|qrcode.react · html5-qrcode|4.2 / 2.3|Sinh mã QR vé và QR chuyển khoản; đọc mã bằng camera cho nhân viên
+#ROW|Biểu đồ|recharts|2.15|Biểu đồ doanh thu, top phim, kênh bán
+#ROW|Thời gian|dayjs|1.11|Múi giờ Asia/Ho_Chi_Minh, định dạng ngày giờ và tiền tệ
+#ROW|Kiểm thử|Vitest|2.1|Bốn kịch bản tích hợp trên engine nghiệp vụ
+#EMPTY
+#P|So với danh sách đề xuất ở Tài liệu kỹ thuật Frontend, bản triển khai giữ được các lựa chọn chính (React, TypeScript strict, Vite, React Router, TanStack Query, Zustand, react-hook-form, zod, Tailwind). Hai thư viện được hồ sơ đề xuất nhưng chưa dùng là i18next (chưa cần vì giao diện chỉ có tiếng Việt) và Sentry (chưa cần vì chưa có môi trường vận hành thật).
+#H2|4.3 Cài đặt các chức năng tiêu biểu
+#H3|4.3.1. Giữ ghế nguyên tử và chống bán trùng
+#P|Việc giữ ghế không đọc rồi ghi theo hai bước, mà nằm trong một lần ghi duy nhất: máy chủ kiểm tra suất còn mở bán, kiểm tra giới hạn tám ghế, kiểm tra ghế chưa thuộc đơn nào đang hiệu lực, sau đó tạo đơn holding và đánh dấu các ghế đã bị giữ trong cùng một thao tác. Mọi yêu cầu làm thay đổi dữ liệu được xếp hàng tuần tự, nên hai khách bấm cùng lúc cho một ghế chỉ một người thành công; người còn lại nhận mã SEAT_UNAVAILABLE kèm danh sách ghế vừa mất.
+#P|Mỗi khách chỉ được có một đơn đang giữ cho một suất; tạo đơn mới cho cùng suất sẽ tự hủy đơn cũ và nhả ghế, tránh việc một người găm nhiều cụm ghế. Số đơn giữ đồng thời trên các suất khác bị giới hạn theo tham số max_active_holds_per_user, vượt quá thì trả HOLD_LIMIT_EXCEEDED kèm hướng dẫn hủy bớt đơn cũ.
+#P|Giá của từng ghế và tên combo được chụp vào đơn ngay tại thời điểm tạo, nên khi quản trị đổi bảng giá sau đó, đơn cũ vẫn giữ đúng số tiền khách đã thấy. Đây là điều kiện để báo cáo doanh thu và đối soát không bị sai lệch về sau.
+#H3|4.3.2. Đồng hồ giữ ghế và giờ máy chủ
+#P|Đồng hồ giữ ghế không đếm lùi từ số giây nhận được, mà tính từ thời điểm tuyệt đối của máy chủ: mỗi phản hồi đơn hàng mang theo giờ máy chủ, giao diện lưu độ lệch so với giờ trình duyệt và dùng độ lệch đó cho mọi phép tính. Nhờ vậy khi máy khách chỉnh sai giờ vài phút, thời gian còn lại vẫn đúng; khi tab bị ngủ rồi được mở lại, đồng hồ tự tính lại theo giờ thực thay vì tiếp tục từ giá trị cũ.
+#P|Đồng hồ chuyển sang màu cảnh báo khi còn dưới hai phút và chỉ phát một thông báo nhắc duy nhất. Khi hết giờ, giao diện hiển thị hộp thoại chặn kèm nút chọn lại ghế, đồng thời hỏi lại máy chủ để xác nhận trạng thái thật — nếu quản trị đã gia hạn đơn thì khách tiếp tục được, nếu không thì ghế đã được nhả cho người khác.
+#H3|4.3.3. Thanh toán QR và duyệt biên lai
+#P|Trang thanh toán dựng đường dẫn VietQR từ cấu hình do quản trị nhập (mã ngân hàng, số tài khoản, tên chủ tài khoản, tiền tố nội dung) và tham số của đơn (số tiền, nội dung chuyển khoản). Mọi thành phần chuỗi đều được mã hóa trước khi ghép vào đường dẫn để tránh trường hợp tên có dấu hoặc khoảng trắng làm hỏng mã. Số tiền và nội dung luôn lấy từ máy chủ; giao diện không tự sinh.
+#P|Khách tải ảnh biên lai, hệ thống kiểm tra định dạng và dung lượng ở cả hai phía, tính băm SHA-256 của ảnh rồi so với các ảnh đã nhận để chặn dùng lại một biên lai cho nhiều đơn. Đơn chuyển sang trạng thái chờ duyệt và bắt đầu tính thời hạn SLA.
+#P|Phía quản trị, hàng đợi duyệt sắp theo thời gian gửi cũ nhất, hiển thị ảnh phóng to, số tiền cần thu đặt cạnh số tiền khách khai báo, nội dung chuyển khoản mong đợi, thời gian còn lại và cảnh báo nếu ảnh trùng với đơn khác. Duyệt hoặc từ chối đều ghi nhật ký kèm người thực hiện; từ chối bắt buộc chọn lý do để khách biết cần sửa gì khi gửi lại.
+#H3|4.3.4. Vé điện tử và soát vé
+#P|Khi đơn được duyệt thanh toán, hệ thống phát hành một vé cho mỗi ghế. Mã vé dài 32 ký tự, sinh từ bảng chữ đã loại các ký tự dễ nhầm như 0, O, 1, I, nên có thể đọc và nhập tay khi cần mà vẫn đủ không gian để chống đoán. Mã QR chỉ chứa mã vé, không chứa tên, số điện thoại hay bất kỳ dữ liệu cá nhân nào.
+#P|Soát vé là thao tác nguyên tử: máy chủ chỉ chuyển vé từ valid sang used nếu vé đang ở trạng thái hợp lệ và còn trong khung giờ cho phép. Hai máy quét cùng một mã tại cùng thời điểm thì chỉ một máy nhận kết quả OK, máy còn lại nhận ALREADY_USED kèm giờ và người đã soát trước đó. Kết quả trả về gồm năm nhóm: hợp lệ, đã dùng, chưa đến giờ hoặc quá giờ, không hợp lệ (kèm lý do cụ thể), và cần kiểm tra giấy tờ với vé ưu đãi hoặc phim T16, T18.
+#P|Mọi lần quét đều được ghi vào bảng nhật ký soát vé kể cả khi thất bại, phục vụ đối chiếu khi có tranh chấp. Quản lý có thể hoàn tác một lần soát vé bị nhầm, nhưng bắt buộc nhập lý do và thao tác này cũng vào nhật ký.
+#H3|4.3.5. Suất chiếu, chống trùng giờ và timeline
+#P|Giờ kết thúc của suất chiếu do máy chủ tính từ giờ bắt đầu, thời lượng phim và thời gian quảng cáo; giao diện chỉ hiển thị. Khi tạo hoặc sửa suất, máy chủ kiểm tra ba điều kiện: không nằm trong quá khứ, không chồng lấn với suất khác trong cùng phòng, và giữa hai suất có ít nhất thời gian dọn phòng theo cấu hình. Vi phạm trả SHOWTIME_OVERLAP kèm danh sách suất xung đột để giao diện tô đỏ đúng khối trên timeline.
+#P|Màn hình quản trị có hai chế độ xem: danh sách và timeline theo phòng, trục ngang là giờ trong ngày, mỗi suất là một khối màu theo phim. Công cụ tạo hàng loạt cho phép chọn phim, phòng, khoảng ngày và nhiều khung giờ, sau đó chạy kiểm tra trước khi lưu và hiển thị bảng xem trước có đánh dấu dòng xung đột. Với suất đã có đơn, hệ thống chỉ cho sửa giá và ghi chú; đổi giờ, phòng hoặc phim bắt buộc đi qua luồng hủy hoặc dời suất có danh sách đơn bị ảnh hưởng.
+#H3|4.3.6. Voucher, điểm thưởng và hạng thành viên
+#P|Voucher được kiểm tra theo thứ tự: trạng thái hiệu lực, thời gian bắt đầu và kết thúc, giá trị đơn tối thiểu, phạm vi áp dụng, tổng lượt dùng và lượt trên mỗi người. Mã không phân biệt chữ hoa chữ thường và được cắt khoảng trắng trước khi so khớp. Khi đơn được thanh toán, hệ thống mới ghi nhận lượt dùng; nếu đơn hủy hoặc hết hạn, lượt được trả lại. Cách làm này tránh việc một mã bị trừ lượt bởi những đơn không bao giờ hoàn tất.
+#P|Điểm thưởng được cộng theo tỷ lệ cấu hình trên số tiền thực trả sau giảm giá, chỉ cộng khi đơn đã thanh toán và vé đã phát hành. Khách có thể dùng điểm để giảm trực tiếp vào đơn với giới hạn theo hạng; mọi biến động điểm đều ghi thành một dòng riêng để đối chiếu. Hạng thành viên xét theo tổng chi tiêu mười hai tháng với các ngưỡng cấu hình được, kèm quyền lợi về tốc độ tích điểm và ưu đãi bắp nước.
+#H3|4.3.7. Báo cáo và xuất dữ liệu
+#P|Tầng báo cáo nhận tham số khoảng ngày và phạm vi rạp, sau đó tổng hợp trực tiếp từ đơn, giao dịch, vé và ca làm việc. Tám loại báo cáo đã cài đặt gồm doanh thu, phim, suất chiếu, ca nhân viên, voucher, hoàn tiền, khách hàng và bắp nước. Mỗi loại trả về cùng một cấu trúc gồm các dòng số liệu và phần tóm tắt, nhờ đó giao diện dùng chung một thành phần bảng và biểu đồ.
+#P|Chức năng xuất dữ liệu tạo tệp CSV từ đúng tập dòng đang hiển thị, không xuất toàn bộ cơ sở dữ liệu, và đặt tên tệp theo loại báo cáo kèm ngày. Cách làm này đủ cho nhu cầu của đồ án; với báo cáo lớn, hồ sơ đề xuất chuyển sang tạo tệp bất đồng bộ ở máy chủ, là việc còn lại đã ghi ở phần Kết luận.
+#H3|4.3.8. Xử lý lỗi và thông điệp tiếng Việt
+#P|Mỗi mã lỗi nghiệp vụ có một thông điệp tiếng Việt và một hành vi giao diện xác định. Giao diện ưu tiên hiển thị thông điệp do máy chủ trả về; bảng dưới là thông điệp dự phòng khi máy chủ không kèm nội dung:
+#TBL|36,38,26
+#ROW|Mã lỗi|Thông điệp dự phòng|Hành động giao diện
+#ROW|SEAT_UNAVAILABLE|Ghế bạn chọn vừa có người khác giữ.|Tô đỏ ghế bị mất, tải lại sơ đồ, bỏ chọn ghế đó
+#ROW|HOLD_EXPIRED|Đơn đã hết thời gian giữ ghế.|Hộp thoại chặn kèm nút chọn lại ghế
+#ROW|HOLD_LIMIT_EXCEEDED|Bạn đang giữ quá nhiều đơn.|Liệt kê đơn đang giữ, gợi ý hủy bớt
+#ROW|SHOWTIME_CLOSED|Suất chiếu đã đóng bán.|Quay về lịch chiếu, gợi ý suất gần nhất
+#ROW|VOUCHER_*\t|Mã giảm giá không dùng được.|Nêu lý do cụ thể dưới ô nhập, không chặn đặt vé
+#ROW|PAYMENT_PROOF_DUPLICATE|Ảnh biên lai đã dùng cho đơn khác.|Cho chọn ảnh khác, giữ nguyên số tiền
+#ROW|BOOKING_INVALID_STATE|Thao tác không hợp lệ với trạng thái đơn.|Tải lại chi tiết đơn
+#ROW|FORBIDDEN|Bạn không có quyền thực hiện thao tác này.|Ẩn hoặc vô hiệu nút, hiển thị lý do
+#ROW|UNAUTHENTICATED|Phiên đăng nhập đã hết hạn.|Chuyển đăng nhập, giữ nguyên đường dẫn quay lại
+#EMPTY
+#P|Kiểm tra dữ liệu ở giao diện phản chiếu quy tắc của máy chủ để phản hồi nhanh nhưng không thay thế máy chủ: họ tên từ hai ký tự, email đúng định dạng, số điện thoại Việt Nam mười số, mật khẩu tối thiểu tám ký tự gồm chữ và số, ngày sinh không ở tương lai, bắt buộc đồng ý điều khoản. Lỗi theo trường do máy chủ trả về được gắn vào đúng ô nhập thay vì hiển thị một thông báo chung.
+#P|Sau mỗi thao tác ghi, chỉ những khóa dữ liệu liên quan được làm mới thay vì tải lại toàn bộ: tạo đơn làm mới chi tiết đơn và danh sách vé của tôi; tải biên lai làm mới trạng thái thanh toán; duyệt biên lai làm mới hàng đợi, đơn hàng và chỉ số trên bảng điều khiển. Hệ thống không cập nhật lạc quan cho tiền, ghế và trạng thái đơn, vì hiển thị sai một con số tiền còn tệ hơn việc chờ thêm một nhịp mạng.
+#H1|PHẦN 5: KIỂM THỬ VÀ KẾT QUẢ
+#H2|5.1 Kế hoạch kiểm thử
+#P|Hồ sơ quy định năm tầng kiểm thử (Tài liệu kỹ thuật Frontend, mục 13). Bản triển khai hiện thực hiện được tầng nghiệp vụ ở mức tự động và các tầng giao diện ở mức kiểm tra thủ công có hệ thống:
+#TBL|14,20,44,22
+#ROW|Tầng|Công cụ|Phạm vi bắt buộc|Trạng thái
+#ROW|Đơn vị|Vitest|Hàm tính giá ghế, tính tổng đơn, kiểm tra voucher, tính thời gian kết thúc suất, định dạng tiền và ngày|Đã có
+#ROW|Tích hợp nghiệp vụ|Vitest + kho dữ liệu tạm|Giữ ghế, hết hạn giữ ghế, bán tại quầy, hoàn tiền, soát vé, voucher, biên lai trùng, chống trùng suất|Đã có
+#ROW|Thành phần|Testing Library|Sơ đồ ghế, đồng hồ giữ ghế, khung tải biên lai, form đăng ký|Chưa làm
+#ROW|Đầu cuối|Playwright|Đặt vé đến nhận vé, hai trình duyệt tranh một ghế, soát vé, hết hạn giữ ghế|Chưa làm
+#ROW|Truy cập|axe-core|Các trang chính không có lỗi nghiêm trọng|Chưa làm
+#EMPTY
+#P|Mục tiêu độ phủ theo hồ sơ là từ 90% cho các mô-đun thuần và 70% tổng thể. Hiện tại các quy tắc ghế, tiền và vé đã được phủ ở tầng nghiệp vụ; phần giao diện mới được kiểm tra thủ công theo danh sách ở mục 5.3.
+#H2|5.2 Kịch bản kiểm thử đã thực hiện
+#TBL|26,10,46,18
+#ROW|Nhóm kiểm thử|Số kịch bản|Nội dung kiểm chứng|Kết quả
+#ROW|Luồng đặt vé đầy đủ|1|Giữ ghế, áp voucher, chốt đơn, gửi biên lai, duyệt thanh toán, phát hành vé và soát vé; kiểm tra số ghế bị khóa và trạng thái sau mỗi bước|Đạt
+#ROW|Hết hạn giữ ghế|1|Đơn quá hạn chuyển sang expired, ghế được nhả và có thể bán lại cho khách khác|Đạt
+#ROW|Bán tại quầy và hoàn tiền|1|Tạo đơn POS, thanh toán tiền mặt, hoàn tiền toàn phần; kiểm tra trạng thái vé, điểm và lượt voucher sau khi hoàn|Đạt
+#ROW|Chống trùng và biên lai trùng|1|Tạo suất chồng lấn bị chặn với mã SHOWTIME_OVERLAP; gửi lại cùng một ảnh biên lai cho đơn khác bị chặn với PAYMENT_PROOF_DUPLICATE|Đạt
+#EMPTY
+#P|Kết quả chạy lại trên mã nguồn hiện tại: bốn kịch bản, bốn đạt, không có kịch bản thất bại, thời gian khoảng bảy giây. Ngoài kiểm thử tự động, các màn hình chính đã được kiểm tra thủ công bằng cách chạy ứng dụng với dữ liệu mẫu, đăng nhập lần lượt bằng bốn tài khoản demo (khách hàng, nhân viên, quản lý, quản trị), thực hiện một lượt đặt vé hoàn chỉnh từ chọn ghế đến nhận vé và một lượt duyệt biên lai từ phía quản trị.
+#H2|5.3 Kết quả thực hiện ứng dụng
+#P|Các hình dưới đây được chụp trực tiếp từ ứng dụng đang chạy với dữ liệu mẫu của dự án (42 phim, 1.352 suất chiếu, 800 đơn hàng). Hình 5.1 đến 5.8 là luồng khách hàng, hình 5.9 đến 5.14 là khu vực quản trị, hình 5.15 là giao diện nhân viên soát vé.
+#FIG|01-home|Hình 5.1: Trang chủ — hero phim đang chiếu, đặt vé nhanh, danh sách phim
+#FIG|02-movie-list|Hình 5.2: Danh sách phim — lọc theo trạng thái chiếu và thể loại
+#FIG|03-movie-detail|Hình 5.3: Chi tiết phim — nhãn tuổi, thông tin suất chiếu, nút mua vé
+#FIG|04-seats|Hình 5.4: Chọn ghế — sơ đồ lưới, bảy trạng thái ghế, tóm tắt đơn
+#FIG|05-combos|Hình 5.5: Bắp nước — combo theo danh mục, giỏ hàng dính đáy màn hình
+#FIG|06-review|Hình 5.6: Xác nhận đơn — voucher, điểm thưởng, tổng tiền do máy chủ tính
+#FIG|07-payment|Hình 5.7: Thanh toán QR — VietQR, đồng hồ giữ ghế theo giờ máy chủ
+#FIG|08-ticket|Hình 5.8: Vé điện tử — một vé cho mỗi ghế, mã QR và trạng thái vé
+#FIG|09-admin-dashboard|Hình 5.9: Bảng điều khiển quản trị — KPI, doanh thu bảy ngày, top phim
+#FIG|10-admin-receipts|Hình 5.10: Hàng đợi duyệt biên lai — ảnh chứng từ, đối chiếu số tiền, hạn SLA
+#FIG|11-admin-showtimes|Hình 5.11: Suất chiếu — timeline theo phòng, cảnh báo trùng giờ
+#FIG|12-admin-orders|Hình 5.12: Đơn hàng — danh sách, trạng thái đơn và trạng thái thanh toán
+#FIG|13-admin-seat-builder|Hình 5.13: Trình dựng sơ đồ ghế — lưới ô, công cụ tô, xem trước như khách
+#FIG|15-admin-order-detail|Hình 5.14: Chi tiết đơn — thông tin khách, ghế, thanh toán, hành động theo trạng thái
+#FIG|16-staff-scanner|Hình 5.15: Soát vé — nhập mã thủ công, năm loại kết quả, lịch sử quét
+#H2|5.4 Đánh giá kết quả đạt được
+#P|1. Ưu điểm:
+#B|Bám sát đặc tả: các quy tắc về ghế, hạn giữ, giá, voucher, biên lai, vé và soát vé đều được cài đặt ở máy chủ và có kiểm thử tự động đi kèm.
+#B|Máy chủ là nguồn sự thật duy nhất: giá, tổng tiền, trạng thái, danh sách ghế và danh sách hành động hợp lệ đều do máy chủ trả về; giao diện không tự tính và không tự suy luận nút.
+#B|Hợp đồng API thống nhất: một điểm vào duy nhất, phong bì lỗi có mã ổn định, thông điệp tiếng Việt gắn với hành động giao diện, nhờ đó việc bổ sung màn hình mới không phải viết lại tầng mạng.
+#B|Giao diện theo trạng thái: mọi màn hình có tải, rỗng, lỗi và không đủ quyền; các thao tác không hoàn tác được đều có hộp thoại xác nhận kèm lý do.
+#B|Dữ liệu mẫu đủ lớn để trình diễn (42 phim, 1.352 suất chiếu, 800 đơn ở nhiều trạng thái), giúp việc đánh giá giao diện và báo cáo sát thực tế thay vì chỉ chạy với vài bản ghi.
+#P|2. Hạn chế:
+#B|Thanh toán mới ở mức mô phỏng: chưa nối cổng ngân hàng, chưa có webhook nên chưa kiểm chứng được luồng xác nhận tự động và hoàn tiền thật.
+#B|Chưa có tầng kiểm thử thành phần và kiểm thử đầu cuối như kế hoạch; các lỗi chỉ xảy ra khi tương tác phức tạp trên giao diện chưa được phát hiện tự động.
+#B|Một số ràng buộc toàn vẹn mới được cưỡng chế ở tầng nghiệp vụ thay vì ở tầng cơ sở dữ liệu: chưa có ràng buộc duy nhất cho cặp suất chiếu và ghế, chưa có khóa ngoại giữa các bảng.
+#B|Bảo mật còn khoảng cách so với hồ sơ: mật khẩu băm bằng SHA-256 kèm muối cố định, token lưu trong localStorage, chưa có giới hạn tần suất và cấu hình CORS còn mở.
+#B|Mọi thay đổi dữ liệu đi qua một tiến trình tuần tự, phù hợp cho đồ án và cho một máy chủ, nhưng chưa phải thiết kế chịu tải nhiều tiến trình; khóa idempotency cũng chỉ sống trong bộ nhớ tiến trình.
+#B|Chưa có hàng đợi gửi email và chưa có kênh thời gian thực SSE; sơ đồ ghế cập nhật bằng cách hỏi lại máy chủ mỗi năm giây.
+#H3|5.5 Tiêu chí nghiệm thu
+#P|Tài liệu nghiệp vụ (mục 11) định nghĩa mười sáu điểm kiểm tra dùng chung cho kiểm thử, đánh giá và bàn giao. Bảng dưới trích các tiêu chí liên quan trực tiếp đến đồ án và trạng thái đối chiếu hiện tại.
+#TBL|12,66,22
+#ROW|Mã|Tiêu chí|Đối chiếu
+#ROW|AC-01|Hai khách cùng chọn một ghế: chỉ một người giữ được, người kia nhận SEAT_UNAVAILABLE|Đạt
+#ROW|AC-02|Đơn holding quá hạn tự expired và ghế được nhả; đồng hồ giao diện khớp giờ máy chủ|Đạt
+#ROW|AC-03|Đơn đã gửi biên lai giữ ghế đến khi duyệt, từ chối hoặc hết SLA|Đạt
+#ROW|AC-04|Từ chối biên lai có lý do; khách gửi lại được; quá hạn chuyển expired|Đạt
+#ROW|AC-05|Duyệt đơn sinh đúng số vé, mỗi vé một mã QR duy nhất|Đạt
+#ROW|AC-06|Soát vé lần hai trả ALREADY_USED kèm thời điểm; hai máy quét đồng thời chỉ một thành công|Đạt
+#ROW|AC-07|Soát vé ngoài khung giờ trả TOO_EARLY hoặc TOO_LATE|Đạt
+#ROW|AC-08|Tạo suất trùng giờ hoặc thiếu thời gian dọn phòng bị chặn|Đạt
+#ROW|AC-09|Không xóa cứng phim đã có suất chiếu hoặc đơn|Đạt
+#ROW|AC-10|Voucher hết hạn, hết lượt, sai điều kiện đều bị từ chối; hủy đơn trả lượt|Đạt
+#ROW|AC-11|Hoàn tiền một phần cập nhật đúng vé, ghế, điểm và voucher|Đạt
+#ROW|AC-12|Mỗi thao tác nhạy cảm có một dòng nhật ký|Đạt
+#ROW|AC-13|Báo cáo doanh thu khớp tổng đơn đã thanh toán trừ hoàn tiền|Đạt một phần
+#ROW|AC-14|Đăng nhập sai quá ngưỡng bị khóa tạm, thông báo có thời gian còn lại|Đạt
+#ROW|AC-15|Hủy suất chiếu hiển thị danh sách đơn ảnh hưởng và hoàn tiền hàng loạt|Đạt một phần
+#ROW|AC-16|Giao diện không tràn ngang ở 360 px, thao tác được bằng bàn phím|Kiểm tra thủ công
+#EMPTY
+#H1|KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN
+#H3|1. Những kết quả đã đạt được
+#P|Đối chiếu với mục tiêu ban đầu của hồ sơ, đồ án đã hoàn thành:
+#B|Về nghiệp vụ: mô hình hóa đúng vòng đời đơn, thanh toán, vé, suất chiếu và hoàn tiền; cài đặt các quy tắc giữ ghế, hạn giữ, giá, voucher, biên lai và soát vé theo đúng tham số mặc định của tài liệu.
+#B|Về kỹ thuật: 158 hàm nghiệp vụ sau một điểm vào duy nhất, 56 tuyến giao diện, 29 bảng dữ liệu; mã nguồn khoảng 32.500 dòng phía giao diện và 650 dòng phía máy chủ, chia theo miền nghiệp vụ.
+#B|Về chất lượng: bốn kịch bản kiểm thử tự động đều đạt, bao phủ các quy tắc ghế, tiền, vé và các nhánh lỗi quan trọng như hết hạn giữ ghế, biên lai trùng và suất chiếu chồng lấn.
+#B|Về giao diện: ngôn ngữ hình ảnh nhất quán theo token, ưu tiên di động, có đủ trạng thái tải, rỗng, lỗi và không đủ quyền; mười lăm màn hình chính đã được chụp ảnh từ ứng dụng đang chạy.
+#H3|2. Những hạn chế còn tồn tại
+#P|Các hạn chế dưới đây được ghi nhận trung thực, tương ứng với những mục chưa hoàn thành trong lộ trình của hồ sơ:
+#B|Chưa kết nối cổng thanh toán hoặc webhook ngân hàng, nên chưa có đối soát tự động và chưa kiểm chứng được luồng xác nhận trong vài giây như đặc tả.
+#B|Chưa hoàn thành tầng kiểm thử thành phần, kiểm thử đầu cuối và kiểm thử truy cập trong kế hoạch năm tầng.
+#B|Chưa có hàng đợi gửi email, SMS hoặc kênh thời gian thực; thông báo mới dừng ở mức hiển thị trong ứng dụng và sơ đồ ghế làm mới bằng hỏi lại định kỳ.
+#B|Chưa đưa các ràng buộc toàn vẹn xuống cơ sở dữ liệu: chưa có khóa ngoại và chưa có ràng buộc duy nhất cho cặp suất chiếu và ghế.
+#B|Bảo mật cần nâng cấp: thay hàm băm mật khẩu bằng argon2id có muối riêng cho từng người dùng, chuyển phiên sang cookie httpOnly, thêm giới hạn tần suất và siết cấu hình CORS.
+#H3|3. Hướng phát triển trong tương lai
+#P|Các bước tiếp theo bám theo lộ trình triển khai trong hồ sơ (Tài liệu kỹ thuật Frontend, mục 14 và Tài liệu kỹ thuật Admin, mục 9):
+#B|Hoàn thiện hạ tầng chất lượng: thêm Testing Library, MSW và Playwright; đưa kiểm tra kiểu, kiểm thử và đóng gói vào quy trình tích hợp liên tục cho mỗi lần thay đổi.
+#B|Chuyển các ràng buộc nghiệp vụ xuống cơ sở dữ liệu: khóa ngoại cho nhóm bán hàng, ràng buộc duy nhất cho cặp suất chiếu và ghế, kiểm tra tổng tiền bằng ràng buộc CHECK.
+#B|Kết nối cổng thanh toán thật ở môi trường thử nghiệm của nhà cung cấp, bổ sung webhook có xác thực chữ ký, xử lý trùng lặp và đối soát tự động với sao kê.
+#B|Bổ sung hàng đợi công việc có khóa phân tán cho các tác vụ hết hạn giữ ghế, đóng bán và kết thúc suất; thêm kênh SSE cho sơ đồ ghế và hàng đợi duyệt.
+#B|Nâng cấp bảo mật và vận hành: argon2id, cookie httpOnly, giới hạn tần suất, nhật ký có mã yêu cầu xuyên suốt, sao lưu và thử khôi phục định kỳ.
+#B|Hoàn thiện các phần P2, P3 của hồ sơ: giá động theo khung giờ, ca làm việc nâng cao, hóa đơn điện tử, bản tiếng Anh và ứng dụng di động.
+#H1|TÀI LIỆU THAM KHẢO
+#H3|1. Tài liệu của dự án
+#P|PXU Cinema (2026). Hồ sơ tài liệu dự án PXU Cinema v2.0 — Tài liệu nghiệp vụ hệ thống quản lý đặt vé xem phim.
+#P|PXU Cinema (2026). 01_TAI_LIEU_NGHIEP_VU.md — Thuật ngữ, vai trò và ma trận quyền, các quy trình nghiệp vụ, máy trạng thái, quy tắc xuyên suốt, mô hình dữ liệu, báo cáo, yêu cầu phi chức năng, danh mục mã lỗi, tham số cấu hình và danh sách kiểm tra nghiệp vụ.
+#P|PXU Cinema (2026). 02_TAI_LIEU_GIAO_DIEN_AI.md — Nguyên tắc thiết kế, design system, sơ đồ trang, đặc tả từng màn hình khách, nhân viên và quản trị, mẫu trạng thái giao diện, quy tắc responsive và truy cập.
+#P|PXU Cinema (2026). 03_TAI_LIEU_KY_THUAT_FRONTEND_AI.md — Công nghệ, cấu trúc thư mục, biến môi trường, hạ tầng HTTP, định tuyến, hợp đồng API, quản lý dữ liệu, trạng thái và logic trọng tâm, xử lý lỗi, biểu mẫu, bảo mật và kiểm thử.
+#P|PXU Cinema (2026). 04_TAI_LIEU_KY_THUAT_ADMIN_AI.md — Công nghệ bổ sung, cấu trúc thư mục quản trị, phân quyền theo mã, hạ tầng dùng chung, hợp đồng API quản trị và đặc tả các module trọng tâm.
+#H3|2. Tài liệu kỹ thuật chính thống
+#P|React Team. React Documentation. react.dev (thành phần, hook, quản lý trạng thái và chia gói).
+#P|Vite Team. Vite Guide. vitejs.dev (máy chủ phát triển, đóng gói và biến môi trường).
+#P|Microsoft. TypeScript Handbook. typescriptlang.org/docs (hệ thống kiểu tĩnh và tùy chọn strict).
+#P|Remix Software. React Router Documentation. reactrouter.com (định tuyến dữ liệu, tuyến lồng nhau và chốt truy cập).
+#P|TanStack. TanStack Query Documentation. tanstack.com/query (bộ nhớ đệm theo khóa, làm mới và hủy yêu cầu).
+#P|Zustand. Documentation. github.com/pmndrs/zustand (quản lý trạng thái toàn cục và lưu trữ tạm).
+#P|Oracle. MySQL 8.0 Reference Manual. dev.mysql.com/doc (kiểu JSON, chỉ mục, giao dịch và ràng buộc).
+#P|OpenJS Foundation. Express Documentation. expressjs.com (định tuyến, xử lý lỗi và middleware).
+#P|Node.js Foundation. Node.js Documentation. nodejs.org/docs (mô-đun crypto, fetch và bộ chạy kiểm thử).
+#H3|3. Tiêu chuẩn và khuyến nghị
+#P|OWASP Foundation. OWASP Application Security Verification Standard (ASVS) 4.0 — mức 2.
+#P|W3C. Web Content Accessibility Guidelines (WCAG) 2.1, mức AA.
+#P|Ngân hàng Nhà nước Việt Nam. Tiêu chuẩn VietQR — đặc tả sinh mã QR chuyển khoản nhanh.
+#P|Chính phủ Việt Nam. Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân (căn cứ cho quy tắc che dữ liệu và quyền truy cập biên lai).
+#H3|4. Sách và giáo trình chuyên ngành
+#P|Nguyễn Văn Hiệp (2020). Giáo trình Phân tích và thiết kế hệ thống thông tin. NXB Khoa học và Kỹ thuật.
+#P|Phạm Thế Quế (2018). Giáo trình Lập trình web và ứng dụng. NXB Thông tin và Truyền thông.
