@@ -1,0 +1,1 @@
+import{j as s,c as a}from"./index-m_Aj6g_H.js";import{M as d}from"./MovieCard-90GTx2eg.js";function m({movies:i,className:o}){return s.jsx("div",{className:a("grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-5",o),children:i.map(r=>s.jsx(d,{movie:r},r.id))})}export{m as M};

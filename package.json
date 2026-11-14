@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "api": "tsx server/index.ts",
     "api:dev": "tsx watch server/index.ts",
-    "dev:web": "vite"
+    "dev:web": "vite",
+    "deploy": "npm run build && git add -A && git commit -m \"chore: update dist\" --allow-empty && git push"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

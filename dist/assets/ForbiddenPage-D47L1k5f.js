@@ -1,0 +1,1 @@
+import{i as t,j as o,ag as r}from"./index-m_Aj6g_H.js";import"./react-CJ0O8X0W.js";import"./charts-eD2yMMD6.js";import"./qr-duwmv8fv.js";function u(){return t("Không có quyền truy cập"),o.jsx(r,{})}export{u as default};

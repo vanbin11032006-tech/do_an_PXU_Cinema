@@ -1,5 +1,5 @@
 node_modules
-dist
+# `dist` được commit để Vercel chỉ việc phát hành, không build lại (xem vercel.json).
 dist-ssr
 *.local
 .env
