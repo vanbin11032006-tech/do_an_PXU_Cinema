@@ -3,6 +3,17 @@ import { ApiError } from '@/types/domain';
 const TOKEN_KEY = 'pxu.session.token';
 const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
+/**
+ * Chế độ dữ liệu online không cần API server:
+ * - Có `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` → chạy engine nghiệp vụ
+ *   ngay trong trình duyệt và lưu vào Supabase (xem `src/mock/supabaseBackend.ts`).
+ * - Không có → gọi API Express như cũ (`/api/rpc`).
+ * Ở chế độ Supabase, `TOKEN_KEY` lưu id người dùng thay cho session token.
+ */
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/+$/, '');
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+export const LOCAL_DATA_MODE = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
 interface RpcEnvelope<T> {
   data?: T;
   token?: string;
@@ -39,7 +50,49 @@ function unavailableError(status: number): ApiError {
   );
 }
 
+let localBackend: Promise<void> | null = null;
+
+async function ensureLocalBackend(): Promise<void> {
+  if (!localBackend) {
+    localBackend = (async () => {
+      const [{ createSupabaseBackend }, { setDbBackend }] = await Promise.all([
+        import('@/mock/supabaseBackend'),
+        import('@/mock/db'),
+      ]);
+      setDbBackend(createSupabaseBackend(SUPABASE_URL as string, SUPABASE_ANON_KEY as string));
+    })().catch((error) => {
+      localBackend = null;
+      throw error;
+    });
+  }
+  return localBackend;
+}
+
+async function localRpc<T>(fn: string, args: unknown[]): Promise<T> {
+  await ensureLocalBackend();
+  const [core, engine] = await Promise.all([import('@/mock/core'), import('@/mock')]);
+
+  if (fn === 'logout') {
+    core.setActor(null);
+    return null as T;
+  }
+
+  core.setActor(getSessionToken());
+  const handler = (engine as unknown as Record<string, unknown>)[fn];
+  if (typeof handler !== 'function') {
+    throw new ApiError('NOT_FOUND', `Không tìm thấy API "${fn}".`, {}, 404);
+  }
+
+  const data = await (handler as (...input: unknown[]) => Promise<unknown>)(...args);
+  if ((fn === 'login' || fn === 'register') && data && typeof data === 'object' && 'id' in data) {
+    setSessionToken(String((data as { id: string }).id));
+  }
+  return data as T;
+}
+
 export async function rpc<T>(fn: string, args: unknown[]): Promise<T> {
+  if (LOCAL_DATA_MODE) return localRpc<T>(fn, args);
+
   const token = getSessionToken();
   let response: Response;
   try {
