@@ -41,14 +41,24 @@ Kiểm tra nhanh: mở web ở 2 trình duyệt/2 máy khác nhau → dữ liệ
 
 ## 4. Đưa lên Vercel
 
-Biến `VITE_*` được **nhúng lúc build**, nên phải khai báo trên Vercel rồi deploy lại:
+**Cách đang dùng: Vercel phát hành trực tiếp thư mục `dist` đã build sẵn**, không build lại trên Vercel
+(nên không phụ thuộc `tsc`/`esbuild`/`rollup` của máy chủ Vercel). Cấu hình nằm trong `vercel.json`:
+`installCommand`/`buildCommand` là lệnh rỗng, `outputDirectory: "dist"`.
 
-1. Vercel → project → **Settings → Environment Variables**.
-2. Thêm `VITE_SUPABASE_URL` và `VITE_SUPABASE_ANON_KEY` cho cả **Production / Preview / Development**.
-3. **Deployments → Redeploy** (bỏ tick "Use existing build cache").
-4. Xong, mở domain Vercel — dữ liệu lấy trực tiếp từ Supabase.
+Vì vậy mỗi lần sửa code, chạy **một lệnh duy nhất**:
 
-`vercel.json` đã thêm rewrite SPA để các đường dẫn như `/phim`, `/admin` không bị 404 khi F5.
+```bash
+npm run deploy
+```
+
+Lệnh này build lại (`tsc --noEmit && vite build`), commit thư mục `dist`, rồi push → Vercel tự phát hành.
+Nhớ `git pull` trước nếu bạn sửa code trên máy khác.
+
+Key Supabase đã nằm trong `.env.production` (được commit) nên **không cần khai báo Environment Variables**
+trên Vercel nữa. Nếu muốn tách riêng môi trường, vẫn có thể thêm `VITE_SUPABASE_URL` /
+`VITE_SUPABASE_ANON_KEY` trong **Settings → Environment Variables** và build lại bằng `npm run deploy`.
+
+`vercel.json` cũng có rewrite SPA để các đường dẫn như `/phim`, `/admin` không bị 404 khi F5.
 
 ## 5. Lưu ý
 
